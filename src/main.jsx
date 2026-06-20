@@ -1,0 +1,1550 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import {
+  AlertTriangle,
+  BadgeCheck,
+  BookOpen,
+  Camera,
+  CheckCircle2,
+  ChevronDown,
+  CircleHelp,
+  ClipboardCheck,
+  Clock3,
+  CloudOff,
+  FileCheck2,
+  FileSearch,
+  Filter,
+  Gavel,
+  History,
+  ListChecks,
+  Loader2,
+  MapPin,
+  MessageSquareText,
+  Mic,
+  Moon,
+  Plus,
+  Radio,
+  Search,
+  Send,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Upload,
+  Wifi,
+  X
+} from 'lucide-react';
+import './styles.css';
+
+const APPROVED_DOCS = [
+  {
+    id: 'gwinnett-food-code-2025',
+    title: 'Gwinnett County Food Code Field References',
+    jurisdiction: 'Gwinnett County GA',
+    source: 'Gwinnett County Environmental Health',
+    status: 'Approved',
+    version: '2026.1',
+    effective: '2026-01-01',
+    expires: '2027-01-01',
+    owner: 'Food Service Program',
+    sections: [
+      {
+        ref: '81.09(a)',
+        page: 42,
+        severity: 'Critical',
+        topic: 'Cold holding',
+        text:
+          'Time/temperature control for safety food held cold must be maintained at 41 F or below, except during active preparation or other approved limited periods.'
+      },
+      {
+        ref: '81.09(b)',
+        page: 43,
+        severity: 'Critical',
+        topic: 'Hot holding',
+        text:
+          'Time/temperature control for safety food held hot must be maintained at 135 F or above unless a written, approved time-control procedure is in use.'
+      },
+      {
+        ref: '81.07(c)',
+        page: 29,
+        severity: 'Critical',
+        topic: 'Handwashing',
+        text:
+          'Employees must wash hands at a dedicated handwashing sink before food preparation, after contamination events, and after handling raw animal foods.'
+      },
+      {
+        ref: '81.17(d)',
+        page: 68,
+        severity: 'General',
+        topic: 'Date marking',
+        text:
+          'Ready-to-eat refrigerated food prepared on site and held more than 24 hours must be clearly date marked and discarded within the approved holding period.'
+      }
+    ]
+  },
+  {
+    id: 'fulton-food-code-2025',
+    title: 'Fulton County Food Protection Field Manual',
+    jurisdiction: 'Fulton County GA',
+    source: 'Fulton County Board of Health',
+    status: 'Approved',
+    version: '2026.0',
+    effective: '2026-03-15',
+    expires: '2027-03-15',
+    owner: 'Food Protection Program',
+    sections: [
+      {
+        ref: '3-501.16(A)(2)',
+        page: 57,
+        severity: 'Priority',
+        topic: 'Cold holding',
+        text:
+          'Refrigerated time/temperature control for safety food must be maintained at 41 F or less during storage, display, and service.'
+      },
+      {
+        ref: '2-301.14',
+        page: 22,
+        severity: 'Priority',
+        topic: 'Handwashing',
+        text:
+          'Food employees must clean hands and exposed portions of arms after touching bare human body parts, using the toilet room, coughing, sneezing, eating, or handling soiled equipment.'
+      },
+      {
+        ref: '4-601.11(A)',
+        page: 88,
+        severity: 'Priority Foundation',
+        topic: 'Food-contact surfaces',
+        text:
+          'Equipment food-contact surfaces and utensils must be clean to sight and touch before use and after any interruption that may contaminate them.'
+      }
+    ]
+  },
+  {
+    id: 'gwinnett-inspection-sop-2025',
+    title: 'Import-Food 2025 Inspection Form and Field SOP',
+    jurisdiction: 'Gwinnett County GA',
+    source: 'Gwinnett County Environmental Health',
+    status: 'Approved',
+    version: '2026.2',
+    effective: '2026-05-01',
+    expires: '2026-12-31',
+    owner: 'Food Service Program',
+    sections: [
+      {
+        ref: 'SOP-14.2',
+        page: 13,
+        severity: 'Procedure',
+        topic: 'Evidence capture',
+        text:
+          'Inspection notes must identify the observed condition, measured value when applicable, location, corrective action requested, and whether correction occurred during inspection.'
+      },
+      {
+        ref: 'SOP-21.4',
+        page: 31,
+        severity: 'Procedure',
+        topic: 'Embargo',
+        text:
+          'Food may be embargoed when adulteration, unsafe temperature exposure, or loss of source integrity is documented and a supervisor confirms the action.'
+      },
+      {
+        ref: 'SOP-18.7',
+        page: 25,
+        severity: 'Procedure',
+        topic: 'Photo review',
+        text:
+          'Photo evidence may support inspection findings only when the inspector confirms location, date, observed condition, and the applicable code reference.'
+      }
+    ]
+  }
+];
+
+const HEALTH_DEPARTMENTS = [
+  {
+    id: 'gwinnett-ga',
+    name: 'Gwinnett County GA',
+    agency: 'Gwinnett County Environmental Health',
+    docs: ['gwinnett-food-code-2025', 'gwinnett-inspection-sop-2025'],
+    checklist: 'Import-Food 2025',
+    status: 'Ready'
+  },
+  {
+    id: 'fulton-ga',
+    name: 'Fulton County GA',
+    agency: 'Fulton County Board of Health',
+    docs: ['fulton-food-code-2025'],
+    checklist: 'Food Protection Field Manual',
+    status: 'Pilot'
+  }
+];
+
+const FDA_FOOD_CODE_PRELOAD = [
+  {
+    id: 'fda-food-code-2022-official',
+    title: 'FDA Food Code 2022',
+    jurisdiction: 'United States',
+    authority: 'U.S. Food and Drug Administration',
+    version: '2022, January 18 2023 version',
+    effective: '2023-01-18',
+    status: 'Available',
+    scope: 'Model code',
+    sourceUrl: 'https://www.fda.gov/food/fda-food-code/food-code-2022',
+    fingerprint: 'fda-food-code:2022:2023-01-18'
+  },
+  {
+    id: 'fda-food-code-2022-supplement',
+    title: 'Supplement to the FDA Food Code 2022',
+    jurisdiction: 'United States',
+    authority: 'U.S. Food and Drug Administration',
+    version: '2022 Supplement, December 2024 corrections',
+    effective: '2024-12-01',
+    status: 'Available',
+    scope: 'Model code supplement',
+    sourceUrl: 'https://www.fda.gov/food/fda-food-code/food-code-2022',
+    fingerprint: 'fda-food-code-supplement:2022:2024-12'
+  },
+  {
+    id: 'fda-food-code-2017-official',
+    title: 'FDA Food Code 2017',
+    jurisdiction: 'United States',
+    authority: 'U.S. Food and Drug Administration',
+    version: '2017',
+    effective: '2017-01-01',
+    status: 'Available',
+    scope: 'Model code',
+    sourceUrl: 'https://www.fda.gov/food/fda-food-code/food-code-2017',
+    fingerprint: 'fda-food-code:2017'
+  },
+  {
+    id: 'fda-food-code-2017-supplement',
+    title: 'Supplement to the FDA Food Code 2017',
+    jurisdiction: 'United States',
+    authority: 'U.S. Food and Drug Administration',
+    version: '2017 Supplement',
+    effective: '2019-01-01',
+    status: 'Available',
+    scope: 'Model code supplement',
+    sourceUrl: 'https://www.fda.gov/food/fda-food-code/food-code-2017',
+    fingerprint: 'fda-food-code-supplement:2017'
+  }
+];
+
+const STATE_NAMES = [
+  'Alabama',
+  'Alaska',
+  'Arizona',
+  'Arkansas',
+  'California',
+  'Colorado',
+  'Connecticut',
+  'Delaware',
+  'Florida',
+  'Georgia',
+  'Hawaii',
+  'Idaho',
+  'Illinois',
+  'Indiana',
+  'Iowa',
+  'Kansas',
+  'Kentucky',
+  'Louisiana',
+  'Maine',
+  'Maryland',
+  'Massachusetts',
+  'Michigan',
+  'Minnesota',
+  'Mississippi',
+  'Missouri',
+  'Montana',
+  'Nebraska',
+  'Nevada',
+  'New Hampshire',
+  'New Jersey',
+  'New Mexico',
+  'New York',
+  'North Carolina',
+  'North Dakota',
+  'Ohio',
+  'Oklahoma',
+  'Oregon',
+  'Pennsylvania',
+  'Rhode Island',
+  'South Carolina',
+  'South Dakota',
+  'Tennessee',
+  'Texas',
+  'Utah',
+  'Vermont',
+  'Virginia',
+  'Washington',
+  'West Virginia',
+  'Wisconsin',
+  'Wyoming'
+];
+
+const STATE_CODE_PRELOAD = STATE_NAMES.map((state) => ({
+  id: `state-code-${state.toLowerCase().replaceAll(' ', '-')}`,
+  title: `${state} current retail and food service code locator`,
+  jurisdiction: state,
+  authority: `${state} state retail food regulatory authority`,
+  version: 'Current source verification needed',
+  effective: 'Pending verification',
+  status: state === 'Georgia' ? 'Available' : 'Needs verification',
+  scope: 'State food code locator',
+  sourceUrl: 'https://www.fda.gov/food/fda-food-code/state-retail-and-food-service-codes-and-regulations-state',
+  fingerprint: `state-food-code:${state.toLowerCase().replaceAll(' ', '-')}:pending-current`
+}));
+
+const MASTER_CODE_LIBRARY = APPROVED_DOCS.map((doc) => ({
+  id: doc.id,
+  title: doc.title,
+  jurisdiction: doc.jurisdiction,
+  authority: doc.source,
+  version: doc.version,
+  effective: doc.effective,
+  status: doc.status,
+  scope: doc.id.includes('sop') ? 'Local SOP / form' : 'Official code reference',
+  fingerprint: `${doc.id}:${doc.version}`
+})).concat(FDA_FOOD_CODE_PRELOAD, STATE_CODE_PRELOAD, [
+  {
+    id: 'ga-food-service-rules-2025',
+    title: 'Georgia Food Service Rules and Regulations',
+    jurisdiction: 'Georgia',
+    authority: 'Georgia Department of Public Health',
+    version: '2025.0',
+    effective: '2025-07-01',
+    status: 'Available',
+    scope: 'Statewide official code',
+    fingerprint: 'ga-food-service-rules:2025.0'
+  }
+]);
+
+const QUICK_PROMPTS = [
+  'Cold holding chicken at 48 F in Gwinnett County',
+  'When do I cite handwashing?',
+  'Can I embargo food after temperature abuse?',
+  'What should my inspection note include?',
+  'Food-contact surface not clean before use'
+];
+
+const PHOTO_SIGNALS = [
+  {
+    label: 'Thermometer / temperature display',
+    topic: 'Cold holding',
+    risk: 'Check whether the measured food temperature is 41 F or below for cold-held TCS foods.'
+  },
+  {
+    label: 'Hand sink blocked or missing supplies',
+    topic: 'Handwashing',
+    risk: 'Verify dedicated handwashing access, soap, drying method, and recent employee behavior.'
+  },
+  {
+    label: 'Residue on slicer, cutting board, or utensil',
+    topic: 'Food-contact surfaces',
+    risk: 'Confirm surfaces are clean to sight and touch before use.'
+  },
+  {
+    label: 'Prepared food container without date label',
+    topic: 'Date marking',
+    risk: 'Check whether ready-to-eat refrigerated food is held over 24 hours and needs a discard date.'
+  }
+];
+
+const FEATURES = [
+  { id: 'ask', label: 'Ask', icon: MessageSquareText },
+  { id: 'inspection', label: 'AI Inspection', icon: Sparkles },
+  { id: 'configure', label: 'Configure', icon: SlidersHorizontal },
+  { id: 'photo', label: 'Photo Aid', icon: Camera },
+  { id: 'workflow', label: 'Workflow', icon: ClipboardCheck },
+  { id: 'knowledge', label: 'Knowledge', icon: FileCheck2 }
+];
+
+const CHECKLIST_ITEMS = [
+  ['Supervision', '1-2', 'A', 'PIC present, demonstrates knowledge, performs duties'],
+  ['Supervision', '1-2', 'B', 'Certified Food Protection Manager'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-1', 'A', 'Proper use of restriction and exclusion'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-1', 'B', 'Hands clean and properly washed'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-1', 'C', 'No bare hand contact with ready-to-eat foods or approved alternate method properly followed'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-2', 'A', 'Management knowledge, responsibilities, reporting'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-2', 'B', 'Proper eating, tasting, drinking, or tobacco use'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-2', 'C', 'No discharge from eyes, nose, and mouth'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-2', 'D', 'Adequate handwashing facilities supplied & accessible'],
+  ['Employee Health, Good Hygienic Practices, Preventing Contamination by Hand', '2-2', 'E', 'Response procedures for vomiting & diarrheal events'],
+  ['Approved Source', '3-1', 'A', 'Food obtained from approved source'],
+  ['Approved Source', '3-1', 'B', 'Food received at proper temperature'],
+  ['Approved Source', '3-1', 'C', 'Food in good condition, safe, and unadulterated'],
+  ['Approved Source', '3-1', 'D', 'Required records: shellstock tags, parasite destruction'],
+  ['Protection From Contamination', '4-1', 'A', 'Food separated and protected'],
+  ['Protection From Contamination', '4-1', 'B', 'Proper disposition of returned, previously served, reconditioned, and unsafe food'],
+  ['Protection From Contamination', '4-2', 'A', 'Food stored covered'],
+  ['Protection From Contamination', '4-2', 'B', 'Food-contact surfaces: cleaned & sanitized'],
+  ['Cooking and Reheating of TCS Foods, Consumer Advisory', '5-1', 'A', 'Proper cooking time and temperatures'],
+  ['Cooking and Reheating of TCS Foods, Consumer Advisory', '5-1', 'B', 'Proper reheating procedures for hot holding'],
+  ['Cooking and Reheating of TCS Foods, Consumer Advisory', '5-2', '', 'Consumer advisory provided for raw and undercooked foods'],
+  ['Holding of TCS Foods, Date Marking of TCS Foods', '6-1', 'A', 'Proper cold holding temperatures'],
+  ['Holding of TCS Foods, Date Marking of TCS Foods', '6-1', 'B', 'Proper hot holding temperatures'],
+  ['Holding of TCS Foods, Date Marking of TCS Foods', '6-1', 'C', 'Proper cooling time and temperature'],
+  ['Holding of TCS Foods, Date Marking of TCS Foods', '6-1', 'D', 'Time as a public health control: procedures and records'],
+  ['Holding of TCS Foods, Date Marking of TCS Foods', '6-2', '', 'Proper date marking and disposition'],
+  ['Highly Susceptible Populations', '7-1', '', 'Pasteurized foods used: Prohibited foods not offered'],
+  ['Chemicals', '8-2', 'A', 'Food additives: approved and properly used'],
+  ['Chemicals', '8-2', 'B', 'Toxic substances properly identified, stored, used'],
+  ['Conformance with Approved Procedures', '9-2', '', 'Compliance with variance, specialized process and HACCP plan'],
+  ['Safe Food and Water, Food Identification', '10', 'A', 'Pasteurized eggs used where required'],
+  ['Safe Food and Water, Food Identification', '10', 'B', 'Water and ice from approved source'],
+  ['Safe Food and Water, Food Identification', '10', 'C', 'Variance obtained for specialized processing methods'],
+  ['Safe Food and Water, Food Identification', '10', 'D', 'Food properly labeled; original container'],
+  ['Food Temperature Control', '11', 'A', 'Proper cooling methods used: adequate equipment for temperature control'],
+  ['Food Temperature Control', '11', 'B', 'Plant food properly cooked for hot holding'],
+  ['Food Temperature Control', '11', 'C', 'Approved thawing methods used'],
+  ['Food Temperature Control', '11', 'D', 'Thermometers provided and accurate'],
+  ['Prevention of Food Contamination', '12', 'A', 'Contamination prevented during food preparation, storage, display'],
+  ['Prevention of Food Contamination', '12', 'B', 'Personal cleanliness'],
+  ['Prevention of Food Contamination', '12', 'C', 'Wiping cloths: properly used and stored'],
+  ['Prevention of Food Contamination', '12', 'D', 'Washing fruits and vegetables'],
+  ['Postings and Compliance with Clean Air Act', '13', 'A', 'Posted: Permit/Inspection/Choking Poster/Handwashing'],
+  ['Postings and Compliance with Clean Air Act', '13', 'B', 'Compliance with Georgia Smoke Free Air Act'],
+  ['Proper Use of Utensils', '14', 'A', 'In-use utensils: properly stored'],
+  ['Proper Use of Utensils', '14', 'B', 'Utensils, equipment and linens: properly stored, dried, handled'],
+  ['Proper Use of Utensils', '14', 'C', 'Single-use/single-service articles: properly stored, used'],
+  ['Proper Use of Utensils', '14', 'D', 'Gloves used properly'],
+  ['Utensils, Equipment and Vending', '15', 'A', 'Food and nonfood-contact surfaces cleanable, properly designed, constructed, and used'],
+  ['Utensils, Equipment and Vending', '15', 'B', 'Warewashing facilities: installed, maintained, used; test strips'],
+  ['Utensils, Equipment and Vending', '15', 'C', 'Nonfood-contact surfaces clean'],
+  ['Water, Plumbing and Waste', '16', 'A', 'Hot and cold water available; adequate pressure'],
+  ['Water, Plumbing and Waste', '16', 'B', 'Plumbing installed; proper backflow devices'],
+  ['Water, Plumbing and Waste', '16', 'C', 'Sewage and waste water properly disposed'],
+  ['Physical Facilities', '17', 'A', 'Toilet facilities: properly constructed, supplied, cleaned'],
+  ['Physical Facilities', '17', 'B', 'Garbage/refuse properly disposed; facilities maintained'],
+  ['Physical Facilities', '17', 'C', 'Physical facilities installed, maintained, and clean'],
+  ['Physical Facilities', '17', 'D', 'Adequate ventilation and lighting; designated areas used'],
+  ['Pest and Animal Control', '18', '', 'Insects, rodents, and animals not present']
+].map(([category, number, letter, short], index) => ({
+  id: `${number}-${letter || 'base'}-${index}`,
+  category,
+  number,
+  letter,
+  short,
+  sort: index + 1
+}));
+
+const INSPECTION_STATUSES = [
+  { id: 'IN', label: 'In', description: 'In compliance' },
+  { id: 'OUT', label: 'Out', description: 'Out of compliance' },
+  { id: 'NA', label: 'N/A', description: 'Not applicable' },
+  { id: 'NO', label: 'N/O', description: 'Not observed' }
+];
+
+const WIZARD_STEPS = [
+  'Jurisdiction',
+  'Trusted sources',
+  'Draft checklist',
+  'Approval',
+  'Versioned profile'
+];
+
+function normalize(value) {
+  return value.toLowerCase().replace(/[^a-z0-9. ]/g, ' ');
+}
+
+function tokenize(value) {
+  return normalize(value)
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !['the', 'and', 'for', 'with', 'that', 'this', 'what', 'when'].includes(word));
+}
+
+function scoreSection(query, doc, section) {
+  const words = tokenize(query);
+  const haystack = normalize(`${doc.jurisdiction} ${doc.title} ${section.topic} ${section.text} ${section.ref}`);
+  const exactTopic = normalize(query).includes(normalize(section.topic));
+  const wordScore = words.reduce((score, word) => score + (haystack.includes(word) ? 1 : 0), 0);
+  const tempBoost = /\b(41|48|cold|refrigerat|temperature|tcs)\b/i.test(query) && /cold|temperature|tcs|41/i.test(haystack) ? 3 : 0;
+  const handBoost = /hand|sink|wash|soap/i.test(query) && /hand/i.test(haystack) ? 3 : 0;
+  const photoBoost = /photo|picture|image|evidence/i.test(query) && /photo|evidence/i.test(haystack) ? 3 : 0;
+  return wordScore + (exactTopic ? 4 : 0) + tempBoost + handBoost + photoBoost;
+}
+
+function inferredTopics(query) {
+  const text = normalize(query);
+  const topics = [];
+  if (/(cold|41|48|refrigerat|temperature|tcs)/.test(text)) topics.push('Cold holding');
+  if (/(hot|135)/.test(text)) topics.push('Hot holding');
+  if (/(hand|sink|wash|soap)/.test(text)) topics.push('Handwashing');
+  if (/(surface|slicer|utensil|board|clean|residue)/.test(text)) topics.push('Food-contact surfaces');
+  if (/(date|label|discard|ready to eat|rte)/.test(text)) topics.push('Date marking');
+  if (/(embargo|adulterat|source integrity)/.test(text)) topics.push('Embargo');
+  if (/(photo|picture|image)/.test(text)) topics.push('Photo review');
+  if (/(note|document|wording|write|include|evidence)/.test(text)) topics.push('Evidence capture');
+  return topics;
+}
+
+function findEvidence(query, jurisdiction, activeDocIds = APPROVED_DOCS.map((doc) => doc.id)) {
+  const topics = inferredTopics(query);
+  const matches = APPROVED_DOCS.flatMap((doc) =>
+    doc.sections.map((section) => ({
+      doc,
+      section,
+      score: scoreSection(query, doc, section)
+    }))
+  )
+    .filter((item) => {
+      const docIsActive = activeDocIds.includes(item.doc.id);
+      const jurisdictionMatches = jurisdiction === 'All jurisdictions' || item.doc.jurisdiction === jurisdiction;
+      const topicMatches = !topics.length || topics.includes(item.section.topic);
+      return docIsActive && item.score > 1 && jurisdictionMatches && topicMatches;
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  return matches;
+}
+
+function composeAnswer(query, evidence) {
+  if (!evidence.length) {
+    return {
+      status: 'Unsupported',
+      title: 'No approved-source answer found',
+      body:
+        'I cannot determine this from the approved documentation currently loaded. Use supervisor review or add the controlling document before relying on an answer.',
+      note: 'No citation is available because no approved excerpt matched the question.'
+    };
+  }
+
+  const primary = evidence[0];
+  const topic = primary.section.topic.toLowerCase();
+  const isTemperature = /cold|temperature|41|48|tcs|refrigerat/i.test(query + topic);
+  const isHand = /hand|sink|wash|soap/i.test(query + topic);
+  const isEmbargo = /embargo|hold|destroy|discard/i.test(query + topic);
+  const isNote = /note|write|word|document|include/i.test(query + topic);
+
+  let body = primary.section.text;
+  if (isTemperature) {
+    body =
+      'Treat this as a temperature-control question. The approved guidance says cold-held TCS food must be maintained at 41 F or below. If the observed food is above that threshold, document the measured value, location, food item, corrective action, and whether correction occurred during the inspection.';
+  } else if (isHand) {
+    body =
+      'Use the handwashing standard when employee behavior or handwashing facilities create a contamination risk. Document what you observed, where it happened, and whether the employee washed at a dedicated handwashing sink before returning to food work.';
+  } else if (isEmbargo) {
+    body =
+      'Embargo may be appropriate only when the unsafe condition is documented and the local procedure is followed. The approved SOP requires evidence of adulteration, unsafe temperature exposure, or source-integrity loss, plus supervisor confirmation.';
+  } else if (isNote) {
+    body =
+      'A defensible inspection note should include the observed condition, measured value if applicable, location, corrective action requested, and whether correction occurred during inspection.';
+  }
+
+  return {
+    status: primary.section.severity,
+    title: `Grounded answer from ${evidence.length} approved source${evidence.length === 1 ? '' : 's'}`,
+    body,
+    note:
+      'This answer is constrained to the approved library. Review the cited sections before taking enforcement action.'
+  };
+}
+
+function checklistQuery(item) {
+  return `${item.short} ${item.category}`;
+}
+
+function composeInspectionAssist(item, status, jurisdiction, activeDocIds) {
+  const evidence = findEvidence(checklistQuery(item), jurisdiction, activeDocIds);
+  const selectedStatus = INSPECTION_STATUSES.find((option) => option.id === status);
+  const statusText = selectedStatus ? selectedStatus.description : 'not marked yet';
+  const isOut = status === 'OUT';
+  const citation = evidence[0];
+
+  return {
+    evidence,
+    title: `${item.number}${item.letter ? item.letter : ''}: ${item.short}`,
+    body: citation
+      ? composeAnswer(checklistQuery(item), evidence).body
+      : 'No approved source excerpt is currently mapped to this checklist item. Use the checklist item text and supervisor review until the controlling code section is approved in the library.',
+    suggestedNote: isOut
+      ? `Observed ${item.short.toLowerCase()} out of compliance at [location]. Document the condition, measured value if applicable, corrective action requested, and whether correction occurred during inspection.`
+      : `Current mark: ${statusText}. Use AI Assist again after selecting OUT to draft violation-ready observation language.`
+  };
+}
+
+function severityForItem(item) {
+  const text = normalize(`${item.category} ${item.short}`);
+  if (/(cold|hot|temperature|cooling|cooking|reheating|hand|bare hand|source|contamination|sanitized|toxic|sewage|pest)/.test(text)) {
+    return 'High';
+  }
+  if (/(date|records|label|thermometer|water|plumbing|variance|haccp)/.test(text)) {
+    return 'Medium';
+  }
+  return 'Routine';
+}
+
+function correctivePromptForItem(item) {
+  const text = normalize(`${item.category} ${item.short}`);
+  if (/(cold|hot|temperature|cooling|cooking|reheating)/.test(text)) {
+    return 'Record measured temperature, food item, location, time, disposition, and corrective action taken.';
+  }
+  if (/(hand|bare hand|hygienic)/.test(text)) {
+    return 'Document observed employee behavior, handwashing facility condition, immediate correction, and retraining if needed.';
+  }
+  if (/(surface|sanitized|utensil|equipment)/.test(text)) {
+    return 'Document affected surface or equipment, contamination condition, cleaning/sanitizing action, and whether use stopped until corrected.';
+  }
+  return 'Document observed condition, location, corrective action requested, and whether correction occurred during inspection.';
+}
+
+function generateDraftChecklist(selectedDocs, jurisdictionName) {
+  const sourceNames = selectedDocs.map((doc) => doc.title);
+  const hasFoodCode = selectedDocs.some((doc) => /food code|food service|food protection|rules/i.test(doc.title));
+  const hasSop = selectedDocs.some((doc) => /sop|form|inspection/i.test(doc.title));
+  const count = hasFoodCode && hasSop ? 18 : 10;
+  return CHECKLIST_ITEMS.slice(0, count).map((item, index) => {
+    const evidence = findEvidence(checklistQuery(item), jurisdictionName, selectedDocs.map((doc) => doc.id));
+    const citation = evidence[0];
+    return {
+      id: `draft-${item.id}`,
+      approved: Boolean(citation),
+      number: item.number,
+      letter: item.letter,
+      category: item.category,
+      short: item.short,
+      citation: citation ? `${citation.section.ref} · ${citation.doc.title}, p. ${citation.section.page}` : 'Citation mapping required before approval',
+      severity: severityForItem(item),
+      statuses: 'In / Out / N/A / N/O',
+      correctivePrompt: correctivePromptForItem(item),
+      sourceSummary: sourceNames.slice(0, 2).join(' + ')
+    };
+  });
+}
+
+function App() {
+  const [query, setQuery] = useState('Cold holding chicken at 48 F in Gwinnett County');
+  const [jurisdiction, setJurisdiction] = useState('Gwinnett County GA');
+  const [answer, setAnswer] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [photoName, setPhotoName] = useState('');
+  const [photoFindings, setPhotoFindings] = useState([]);
+  const [listening, setListening] = useState(false);
+  const [activeFeature, setActiveFeature] = useState('ask');
+  const [checklistStatuses, setChecklistStatuses] = useState({});
+  const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
+  const [checklistCategory, setChecklistCategory] = useState('All categories');
+  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [departmentSearch, setDepartmentSearch] = useState('');
+  const [activeDepartmentId, setActiveDepartmentId] = useState('gwinnett-ga');
+  const [agencyDocSelections, setAgencyDocSelections] = useState(() =>
+    Object.fromEntries(HEALTH_DEPARTMENTS.map((department) => [department.id, department.docs]))
+  );
+  const [registrySearch, setRegistrySearch] = useState('');
+  const [pendingUploads, setPendingUploads] = useState([]);
+  const [showUpload, setShowUpload] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [configDepartmentId, setConfigDepartmentId] = useState('gwinnett-ga');
+  const [configSourceIds, setConfigSourceIds] = useState(['gwinnett-food-code-2025', 'gwinnett-inspection-sop-2025', 'ga-food-service-rules-2025']);
+  const [draftChecklist, setDraftChecklist] = useState([]);
+  const [lockedProfile, setLockedProfile] = useState(null);
+  const recognitionRef = useRef(null);
+
+  const jurisdictions = useMemo(() => ['All jurisdictions', ...new Set(APPROVED_DOCS.map((doc) => doc.jurisdiction))], []);
+  const activeDepartment = HEALTH_DEPARTMENTS.find((department) => department.id === activeDepartmentId) ?? HEALTH_DEPARTMENTS[0];
+  const configDepartment = HEALTH_DEPARTMENTS.find((department) => department.id === configDepartmentId) ?? HEALTH_DEPARTMENTS[0];
+  const configSources = MASTER_CODE_LIBRARY.filter((doc) => configSourceIds.includes(doc.id));
+  const activeDocIds = agencyDocSelections[activeDepartment.id] ?? activeDepartment.docs;
+  const departmentMatches = useMemo(() => {
+    const search = normalize(departmentSearch);
+    return HEALTH_DEPARTMENTS.filter((department) =>
+      normalize(`${department.name} ${department.agency} ${department.status}`).includes(search)
+    );
+  }, [departmentSearch]);
+  const registryMatches = useMemo(() => {
+    const search = normalize(registrySearch);
+    return MASTER_CODE_LIBRARY.filter((doc) =>
+      normalize(`${doc.title} ${doc.jurisdiction} ${doc.authority} ${doc.scope}`).includes(search)
+    );
+  }, [registrySearch]);
+  const preloadStats = useMemo(() => {
+    const stateAvailable = STATE_CODE_PRELOAD.filter((doc) => doc.status === 'Available').length;
+    return {
+      fda: FDA_FOOD_CODE_PRELOAD.length,
+      states: STATE_CODE_PRELOAD.length,
+      verifiedStates: stateAvailable,
+      pendingStates: STATE_CODE_PRELOAD.length - stateAvailable
+    };
+  }, []);
+  const checklistCategories = useMemo(() => ['All categories', ...new Set(CHECKLIST_ITEMS.map((item) => item.category))], []);
+  const visibleChecklistItems = useMemo(
+    () => CHECKLIST_ITEMS.filter((item) => checklistCategory === 'All categories' || item.category === checklistCategory),
+    [checklistCategory]
+  );
+  const checklistCounts = useMemo(() => {
+    const counts = { IN: 0, OUT: 0, NA: 0, NO: 0, blank: 0 };
+    CHECKLIST_ITEMS.forEach((item) => {
+      const status = checklistStatuses[item.id];
+      if (status) counts[status] += 1;
+      else counts.blank += 1;
+    });
+    return counts;
+  }, [checklistStatuses]);
+  const activeEvidence = answer?.evidence ?? [];
+  const activeDocs = MASTER_CODE_LIBRARY.filter((doc) => activeDocIds.includes(doc.id));
+  const activeSourceDocs = APPROVED_DOCS.filter((doc) => activeDocIds.includes(doc.id));
+  const approvedCount = activeSourceDocs.reduce((count, doc) => count + doc.sections.length, 0);
+  const activeAssist = activeChecklistItem
+    ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
+    : null;
+  const approvedDraftCount = draftChecklist.filter((item) => item.approved).length;
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}service-worker.js`).catch(() => {});
+    }
+
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  function ask(nextQuery = query) {
+    const trimmed = nextQuery.trim();
+    if (!trimmed) return;
+    const evidence = findEvidence(trimmed, jurisdiction, activeDocIds);
+    const composed = composeAnswer(trimmed, evidence);
+    const result = {
+      id: crypto.randomUUID(),
+      query: trimmed,
+      jurisdiction,
+      ...composed,
+      evidence,
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setAnswer(result);
+    setHistory((items) => [result, ...items].slice(0, 6));
+  }
+
+  function handleVoice() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setAnswer({
+        id: 'voice-unavailable',
+        query: 'Voice input',
+        jurisdiction,
+        status: 'Unavailable',
+        title: 'Voice input is not available in this browser',
+        body: 'Use the text box for now. The product architecture still supports a voice layer for field use.',
+        note: 'Browser speech recognition support varies by platform.',
+        evidence: [],
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      });
+      return;
+    }
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setQuery(transcript);
+      ask(transcript);
+    };
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  }
+
+  function handlePhoto(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPhotoName(file.name);
+    const selected = PHOTO_SIGNALS.filter((_, index) => index < 3);
+    setPhotoFindings(selected);
+  }
+
+  function markChecklistItem(item, status) {
+    setChecklistStatuses((current) => ({ ...current, [item.id]: status }));
+    setActiveChecklistItem(item);
+  }
+
+  function openChecklistAssist(item) {
+    setActiveChecklistItem(item);
+  }
+
+  function selectDepartment(department) {
+    setActiveDepartmentId(department.id);
+    setJurisdiction(department.name);
+    setDepartmentOpen(false);
+    setDepartmentSearch('');
+  }
+
+  function addMasterDocument(docId) {
+    setAgencyDocSelections((current) => {
+      const existing = current[activeDepartment.id] ?? [];
+      if (existing.includes(docId)) return current;
+      return { ...current, [activeDepartment.id]: [...existing, docId] };
+    });
+  }
+
+  function removeAgencyDocument(docId) {
+    setAgencyDocSelections((current) => {
+      const existing = current[activeDepartment.id] ?? [];
+      if (existing.length === 1) return current;
+      return { ...current, [activeDepartment.id]: existing.filter((id) => id !== docId) };
+    });
+  }
+
+  function handleAdminUpload(event) {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+    const newUploads = files.map((file) => {
+      const possibleDuplicate = MASTER_CODE_LIBRARY.find((doc) =>
+        normalize(file.name).includes(normalize(doc.title).split(' ').slice(0, 3).join(' '))
+      );
+      return {
+        id: crypto.randomUUID(),
+        name: file.name,
+        size: `${Math.max(1, Math.round(file.size / 1024))} KB`,
+        status: possibleDuplicate ? 'Possible duplicate' : 'Needs approval',
+        duplicate: possibleDuplicate?.title
+      };
+    });
+    setPendingUploads((items) => [...newUploads, ...items]);
+    setShowUpload(true);
+    event.target.value = '';
+  }
+
+  function toggleConfigSource(docId) {
+    setConfigSourceIds((current) => {
+      if (current.includes(docId) && current.length === 1) return current;
+      if (current.includes(docId)) return current.filter((id) => id !== docId);
+      return [...current, docId];
+    });
+  }
+
+  function runChecklistGeneration() {
+    const generated = generateDraftChecklist(configSources, configDepartment.name);
+    setDraftChecklist(generated);
+    setWizardStep(2);
+  }
+
+  function toggleDraftApproval(itemId) {
+    setDraftChecklist((items) =>
+      items.map((item) => (item.id === itemId ? { ...item, approved: !item.approved } : item))
+    );
+  }
+
+  function approveCitedDraftItems() {
+    setDraftChecklist((items) =>
+      items.map((item) => ({
+        ...item,
+        approved: item.citation !== 'Citation mapping required before approval'
+      }))
+    );
+  }
+
+  function lockJurisdictionProfile() {
+    const approvedItems = draftChecklist.filter((item) => item.approved);
+    setLockedProfile({
+      id: `${configDepartment.id}-profile-v1`,
+      jurisdiction: configDepartment.name,
+      agency: configDepartment.agency,
+      version: 'v1.0-draft',
+      effective: new Date().toISOString().slice(0, 10),
+      docs: configSources,
+      approvedItems,
+      superseded: 'None',
+      approvalHistory: [
+        'AI generated draft checklist from selected trusted sources',
+        `${approvedItems.length} checklist items approved for inspector-facing use`,
+        'Profile locked by department admin for prototype testing'
+      ]
+    });
+    setWizardStep(4);
+  }
+
+  return (
+    <main className="shell">
+      <section className="workspace">
+        <header className="topbar">
+          <div className="topbar-left">
+            <div className="brand compact">
+              <div className="mark"><ShieldCheck size={22} /></div>
+              <div>
+                <strong>InspectAid</strong>
+                <span>Approved-source field support</span>
+              </div>
+            </div>
+            <div className="library-picker">
+              <button className="library-trigger" type="button" onClick={() => setDepartmentOpen((value) => !value)}>
+                <FileCheck2 size={17} />
+                <span>{activeDepartment.name}</span>
+                <strong>{activeDocIds.length}</strong>
+                <ChevronDown size={16} />
+              </button>
+              {departmentOpen && (
+                <div className="library-menu">
+                  <label className="library-search">
+                    <Search size={16} />
+                    <input
+                      value={departmentSearch}
+                      onChange={(event) => setDepartmentSearch(event.target.value)}
+                      placeholder="Search health departments"
+                      autoFocus
+                    />
+                  </label>
+                  <div className="library-summary">
+                    <span>Health department</span>
+                    <span>{approvedCount} citable sections</span>
+                  </div>
+                  <div className="library-options">
+                    {departmentMatches.map((department) => (
+                      <button
+                        key={department.id}
+                        className={activeDepartmentId === department.id ? 'selected' : ''}
+                        type="button"
+                        onClick={() => selectDepartment(department)}
+                      >
+                        <CheckCircle2 size={16} />
+                        <span>
+                          <strong>{department.name}</strong>
+                          <small>{department.agency} · {department.docs.length} approved docs · {department.status}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="status-strip">
+            <span className={isOnline ? 'online' : 'offline'}>
+              {isOnline ? <Wifi size={15} /> : <CloudOff size={15} />}
+              {isOnline ? 'Online' : 'Offline ready'}
+            </span>
+            <span><ShieldCheck size={15} /> Approved sources only</span>
+            <span><Clock3 size={15} /> Audit trail on</span>
+          </div>
+          <button className="icon-button" type="button" aria-label="Display mode">
+            <Moon size={18} />
+          </button>
+        </header>
+
+        <div className="hero-band">
+          <div>
+            <p className="eyebrow"><Radio size={15} /> Field decision support</p>
+            <h1>Ask inspection questions. Get cited, jurisdiction-aware guidance.</h1>
+          </div>
+          <div className="trust-panel">
+            <ShieldCheck size={20} />
+            <span>Unsupported answers are blocked instead of improvised.</span>
+          </div>
+        </div>
+
+        <section className="feature-shell">
+          <nav className="feature-menu" aria-label="Feature menu">
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <button
+                  key={feature.id}
+                  className={activeFeature === feature.id ? 'active' : ''}
+                  type="button"
+                  onClick={() => setActiveFeature(feature.id)}
+                >
+                  <Icon size={18} />
+                  <span>{feature.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="feature-stage">
+            {activeFeature === 'ask' && (
+              <>
+                <section className="ask-panel" aria-label="Ask InspectAid">
+                  <div className="controls-row">
+                    <label>
+                      <MapPin size={16} />
+                      <select value={jurisdiction} onChange={(event) => setJurisdiction(event.target.value)}>
+                        {jurisdictions.map((item) => (
+                          <option key={item}>{item}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} />
+                    </label>
+                    <button className={`voice-button ${listening ? 'active' : ''}`} type="button" onClick={handleVoice}>
+                      <Mic size={17} />
+                      {listening ? 'Listening' : 'Voice'}
+                    </button>
+                    <button className="ghost-button" type="button">
+                      <SlidersHorizontal size={17} />
+                      Strict mode
+                    </button>
+                  </div>
+
+                  <div className="ask-box">
+                    <MessageSquareText size={20} />
+                    <textarea
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') ask();
+                      }}
+                      aria-label="Inspection question"
+                    />
+                    <button className="send-button" type="button" onClick={() => ask()} aria-label="Ask question">
+                      <Send size={20} />
+                    </button>
+                  </div>
+
+                  <div className="quick-prompts">
+                    {QUICK_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => {
+                          setQuery(prompt);
+                          ask(prompt);
+                        }}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="results-grid">
+                  <article className="answer-panel">
+                    {answer ? (
+                      <>
+                        <div className="answer-head">
+                          <span className={`severity ${answer.status.toLowerCase().replaceAll(' ', '-')}`}>
+                            {answer.status === 'Unsupported' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                            {answer.status}
+                          </span>
+                          <small>{answer.jurisdiction}</small>
+                        </div>
+                        <h2>{answer.title}</h2>
+                        <p>{answer.body}</p>
+                        <div className="note">
+                          <CircleHelp size={17} />
+                          <span>{answer.note}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="empty-state">
+                        <FileSearch size={32} />
+                        <h2>Ask a question to generate a source-bound answer.</h2>
+                        <p>The assistant will cite approved sections or decline to answer.</p>
+                      </div>
+                    )}
+                  </article>
+
+                  <article className="citation-panel">
+                    <div className="panel-title">
+                      <BookOpen size={18} />
+                      Citations
+                    </div>
+                    {activeEvidence.length ? (
+                      activeEvidence.map(({ doc, section }) => (
+                        <div className="citation" key={`${doc.id}-${section.ref}`}>
+                          <span className="pill"><Gavel size={13} /> {section.ref}</span>
+                          <h3>{section.topic}</h3>
+                          <p>{section.text}</p>
+                          <small>{doc.title} · p. {section.page} · {doc.source}</small>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="muted">No citations yet.</p>
+                    )}
+                  </article>
+                </section>
+              </>
+            )}
+
+            {activeFeature === 'inspection' && (
+              <section className="inspection-screen">
+                <div className="inspection-header">
+                  <div>
+                    <span className="premium-badge"><Sparkles size={15} /> Premium</span>
+                    <h2>AI-assisted inspection</h2>
+                    <p>Checklist imported from Import-Food 2025. Each item can be marked and assisted in its own violation context.</p>
+                  </div>
+                  <label>
+                    <Filter size={16} />
+                    <select value={checklistCategory} onChange={(event) => setChecklistCategory(event.target.value)}>
+                      {checklistCategories.map((category) => (
+                        <option key={category}>{category}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} />
+                  </label>
+                </div>
+
+                <div className="inspection-metrics">
+                  <div><strong>{CHECKLIST_ITEMS.length}</strong><span>items</span></div>
+                  <div><strong>{checklistCounts.IN}</strong><span>in</span></div>
+                  <div><strong>{checklistCounts.OUT}</strong><span>out</span></div>
+                  <div><strong>{checklistCounts.NA + checklistCounts.NO}</strong><span>n/a or n/o</span></div>
+                </div>
+
+                <div className="inspection-layout">
+                  <div className="checklist-list" aria-label="Inspection checklist">
+                    {visibleChecklistItems.map((item) => {
+                      const status = checklistStatuses[item.id];
+                      return (
+                        <article className={`inspection-item ${activeChecklistItem?.id === item.id ? 'selected' : ''}`} key={item.id}>
+                          <div className="inspection-item-main">
+                            <button className="item-title" type="button" onClick={() => openChecklistAssist(item)}>
+                              <span>{item.number}{item.letter ? item.letter : ''}</span>
+                              <strong>{item.short}</strong>
+                              <small>{item.category}</small>
+                            </button>
+                            <button className="assist-badge" type="button" onClick={() => openChecklistAssist(item)}>
+                              <Sparkles size={15} />
+                              AI Assist
+                            </button>
+                          </div>
+                          <div className="status-buttons" aria-label={`${item.short} status`}>
+                            {INSPECTION_STATUSES.map((option) => (
+                              <button
+                                key={option.id}
+                                className={status === option.id ? `active ${option.id.toLowerCase()}` : ''}
+                                type="button"
+                                title={option.description}
+                                onClick={() => markChecklistItem(item, option.id)}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+
+                  <aside className="assist-panel" aria-label="AI Assist context">
+                    {activeAssist && activeChecklistItem ? (
+                      <>
+                        <span className="premium-badge"><Sparkles size={15} /> AI Assist</span>
+                        <h3>{activeAssist.title}</h3>
+                        <p className="assist-category">{activeChecklistItem.category}</p>
+                        <div className="assist-status-row">
+                          {INSPECTION_STATUSES.map((option) => (
+                            <button
+                              key={option.id}
+                              className={checklistStatuses[activeChecklistItem.id] === option.id ? `active ${option.id.toLowerCase()}` : ''}
+                              type="button"
+                              onClick={() => markChecklistItem(activeChecklistItem, option.id)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="assist-block">
+                          <strong>Contextual guidance</strong>
+                          <p>{activeAssist.body}</p>
+                        </div>
+                        <div className="assist-block">
+                          <strong>Inspection note support</strong>
+                          <p>{activeAssist.suggestedNote}</p>
+                        </div>
+                        <div className="assist-block">
+                          <strong>Citations</strong>
+                          {activeAssist.evidence.length ? (
+                            activeAssist.evidence.map(({ doc, section }) => (
+                              <p key={`${doc.id}-${section.ref}`}>
+                                {section.ref} · {section.topic} · {doc.title}, p. {section.page}
+                              </p>
+                            ))
+                          ) : (
+                            <p>No approved citation mapped yet.</p>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="muted">Select an inspection item to open item-specific AI support.</p>
+                    )}
+                  </aside>
+                </div>
+              </section>
+            )}
+
+            {activeFeature === 'configure' && (
+              <section className="config-wizard">
+                <div className="config-hero">
+                  <div>
+                    <span className="premium-badge"><Sparkles size={15} /> Agency onboarding</span>
+                    <h2>Configure AI-assisted inspection</h2>
+                    <p>Select a jurisdiction, bind trusted legal sources, generate a cited draft checklist, approve items, and lock a versioned inspector profile.</p>
+                  </div>
+                  <div className="profile-stamp">
+                    <ShieldCheck size={22} />
+                    <span>Nothing becomes trusted until approved.</span>
+                  </div>
+                </div>
+
+                <div className="wizard-steps">
+                  {WIZARD_STEPS.map((step, index) => (
+                    <button
+                      key={step}
+                      className={wizardStep === index ? 'active' : wizardStep > index ? 'complete' : ''}
+                      type="button"
+                      onClick={() => setWizardStep(index)}
+                    >
+                      <span>{index + 1}</span>
+                      {step}
+                    </button>
+                  ))}
+                </div>
+
+                {wizardStep === 0 && (
+                  <div className="wizard-panel">
+                    <div className="wizard-copy">
+                      <h3>Select jurisdiction</h3>
+                      <p>This creates the agency profile that will own source selection, checklist approval, version history, and inspector-facing release.</p>
+                    </div>
+                    <div className="department-grid">
+                      {HEALTH_DEPARTMENTS.map((department) => (
+                        <button
+                          key={department.id}
+                          className={configDepartmentId === department.id ? 'selected' : ''}
+                          type="button"
+                          onClick={() => {
+                            setConfigDepartmentId(department.id);
+                            setConfigSourceIds(agencyDocSelections[department.id] ?? department.docs);
+                          }}
+                        >
+                          <span className="pill good">{department.status}</span>
+                          <strong>{department.name}</strong>
+                          <small>{department.agency}</small>
+                        </button>
+                      ))}
+                    </div>
+                    <button className="draft-button wizard-next" type="button" onClick={() => setWizardStep(1)}>
+                      <Send size={17} />
+                      Continue to trusted sources
+                    </button>
+                  </div>
+                )}
+
+                {wizardStep === 1 && (
+                  <div className="wizard-panel">
+                    <div className="wizard-copy">
+                      <h3>Select trusted legal sources</h3>
+                      <p>Choose only sources that are in force for {configDepartment.name}. Shared master documents are reused; local documents enter review before approval.</p>
+                    </div>
+                    <div className="source-picker">
+                      {MASTER_CODE_LIBRARY.filter((doc) =>
+                        ['Gwinnett County GA', 'Georgia', 'United States'].includes(doc.jurisdiction) || configSourceIds.includes(doc.id)
+                      ).slice(0, 14).map((doc) => {
+                        const selected = configSourceIds.includes(doc.id);
+                        return (
+                          <button
+                            key={doc.id}
+                            className={selected ? 'selected' : ''}
+                            type="button"
+                            onClick={() => toggleConfigSource(doc.id)}
+                          >
+                            <CheckCircle2 size={17} />
+                            <span>
+                              <strong>{doc.title}</strong>
+                              <small>{doc.authority} · {doc.scope} · {doc.version}</small>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button className="draft-button wizard-next" type="button" onClick={runChecklistGeneration}>
+                      <Sparkles size={17} />
+                      Generate cited draft checklist
+                    </button>
+                  </div>
+                )}
+
+                {wizardStep === 2 && (
+                  <div className="wizard-panel">
+                    <div className="wizard-copy split-copy">
+                      <div>
+                        <h3>Generated draft checklist</h3>
+                        <p>AI proposes items from selected sources. Items without mapped citations remain blocked from approval.</p>
+                      </div>
+                      <div className="wizard-actions">
+                        <button type="button" onClick={approveCitedDraftItems}>
+                          <BadgeCheck size={16} />
+                          Approve citable
+                        </button>
+                        <button type="button" onClick={() => setWizardStep(3)}>
+                          <Send size={16} />
+                          Review approval
+                        </button>
+                      </div>
+                    </div>
+                    <div className="draft-checklist">
+                      {draftChecklist.length ? draftChecklist.map((item) => (
+                        <article className={item.approved ? 'approved' : ''} key={item.id}>
+                          <div>
+                            <span className={`severity ${item.severity.toLowerCase()}`}>{item.severity}</span>
+                            <h4>{item.number}{item.letter}: {item.short}</h4>
+                            <p>{item.category}</p>
+                            <small>{item.citation}</small>
+                          </div>
+                          <div>
+                            <span>{item.statuses}</span>
+                            <p>{item.correctivePrompt}</p>
+                            <button type="button" onClick={() => toggleDraftApproval(item.id)}>
+                              {item.approved ? <CheckCircle2 size={16} /> : <CircleHelp size={16} />}
+                              {item.approved ? 'Approved' : 'Needs review'}
+                            </button>
+                          </div>
+                        </article>
+                      )) : (
+                        <p className="muted">Generate a draft checklist from trusted sources first.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {wizardStep === 3 && (
+                  <div className="wizard-panel approval-panel">
+                    <div className="wizard-copy">
+                      <h3>Human approval</h3>
+                      <p>Department admins approve only items with citation support. Approved items become eligible for the inspector-facing checklist.</p>
+                    </div>
+                    <div className="approval-summary">
+                      <div><strong>{draftChecklist.length}</strong><span>draft items</span></div>
+                      <div><strong>{approvedDraftCount}</strong><span>approved items</span></div>
+                      <div><strong>{configSources.length}</strong><span>trusted sources</span></div>
+                      <div><strong>{draftChecklist.length - approvedDraftCount}</strong><span>blocked or pending</span></div>
+                    </div>
+                    <div className="approval-list">
+                      {draftChecklist.filter((item) => item.approved).slice(0, 8).map((item) => (
+                        <span key={item.id}><CheckCircle2 size={15} /> {item.number}{item.letter}: {item.short}</span>
+                      ))}
+                    </div>
+                    <button className="draft-button wizard-next" type="button" onClick={lockJurisdictionProfile} disabled={!approvedDraftCount}>
+                      <ShieldCheck size={17} />
+                      Lock versioned profile
+                    </button>
+                  </div>
+                )}
+
+                {wizardStep === 4 && (
+                  <div className="wizard-panel profile-panel">
+                    <div className="wizard-copy">
+                      <h3>Versioned profile</h3>
+                      <p>This is the inspector-facing configuration created from selected legal sources and human-approved checklist items.</p>
+                    </div>
+                    {lockedProfile ? (
+                      <div className="locked-profile">
+                        <span className="premium-badge"><ShieldCheck size={15} /> Locked</span>
+                        <h3>{lockedProfile.jurisdiction} · {lockedProfile.version}</h3>
+                        <p>{lockedProfile.agency} · effective {lockedProfile.effective}</p>
+                        <div className="profile-grid">
+                          <div><strong>{lockedProfile.docs.length}</strong><span>active trusted docs</span></div>
+                          <div><strong>{lockedProfile.approvedItems.length}</strong><span>approved checklist items</span></div>
+                          <div><strong>{lockedProfile.superseded}</strong><span>superseded sources</span></div>
+                        </div>
+                        <div className="approval-history">
+                          {lockedProfile.approvalHistory.map((event) => (
+                            <span key={event}><Clock3 size={15} /> {event}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="muted">No locked profile yet. Complete approval to create one.</p>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeFeature === 'photo' && (
+              <article className="photo-panel feature-panel">
+                <div className="panel-title">
+                  <Camera size={18} />
+                  Photo analysis aid
+                </div>
+                <label className="upload-target">
+                  <Upload size={20} />
+                  <input type="file" accept="image/*" onChange={handlePhoto} />
+                  <span>{photoName || 'Attach inspection photo'}</span>
+                </label>
+                <div className="photo-results">
+                  {photoFindings.length ? (
+                    photoFindings.map((finding) => (
+                      <div key={finding.label}>
+                        <strong>{finding.label}</strong>
+                        <p>{finding.risk}</p>
+                        <button type="button" onClick={() => ask(finding.topic)}>
+                          <Search size={15} />
+                          Check approved rule
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="muted">The MVP flags review prompts. A later model can analyze images against local approved code and require inspector confirmation.</p>
+                  )}
+                </div>
+              </article>
+            )}
+
+            {activeFeature === 'workflow' && (
+              <article className="workflow-panel feature-panel">
+                <div className="panel-title">
+                  <ClipboardCheck size={18} />
+                  Inspection workflow
+                </div>
+                <div className="checklist">
+                  <label><input type="checkbox" defaultChecked /> Approved source matched</label>
+                  <label><input type="checkbox" defaultChecked /> Citation displayed</label>
+                  <label><input type="checkbox" /> Supervisor review needed</label>
+                  <label><input type="checkbox" /> Corrected during inspection</label>
+                </div>
+                <button className="draft-button" type="button" onClick={() => ask('What should my inspection note include?')}>
+                  <ListChecks size={17} />
+                  Draft note requirements
+                </button>
+              </article>
+            )}
+
+            {activeFeature === 'knowledge' && (
+              <article className="admin-panel feature-panel">
+                <div className="panel-title">
+                  <Filter size={18} />
+                  Department knowledge admin
+                </div>
+                <div className="department-admin-head">
+                  <span className="premium-badge"><ShieldCheck size={15} /> {activeDepartment.status}</span>
+                  <h2>{activeDepartment.name}</h2>
+                  <p>{activeDepartment.agency}</p>
+                </div>
+                <div className="control-list">
+                  <span><CheckCircle2 size={15} /> Versioned documents</span>
+                  <span><CheckCircle2 size={15} /> Effective-date tracking</span>
+                  <span><CheckCircle2 size={15} /> Jurisdiction filters</span>
+                  <span><CheckCircle2 size={15} /> Unsupported-answer refusal</span>
+                </div>
+                <div className="admin-library-grid">
+                  <section>
+                    <h3>Agency approved pool</h3>
+                    {activeDocs.map((doc) => (
+                      <div className="admin-doc-row" key={doc.id}>
+                        <span className="pill good"><BadgeCheck size={13} /> Selected</span>
+                        <strong>{doc.title}</strong>
+                        <small>{doc.authority} · {doc.scope} · v{doc.version} · effective {doc.effective}</small>
+                        <button type="button" onClick={() => removeAgencyDocument(doc.id)}>
+                          <X size={14} />
+                          Remove from agency
+                        </button>
+                      </div>
+                    ))}
+                  </section>
+                  <section>
+                    <h3>Trained elements</h3>
+                    <div className="trained-elements">
+                      <div><strong>{approvedCount}</strong><span>citable source sections</span></div>
+                      <div><strong>{CHECKLIST_ITEMS.length}</strong><span>inspection checklist items</span></div>
+                      <div><strong>{checklistCategories.length - 1}</strong><span>checklist categories</span></div>
+                      <div><strong>{activeDepartment.checklist}</strong><span>active inspection form</span></div>
+                    </div>
+                  </section>
+                </div>
+                <div className="master-registry">
+                  <div className="registry-head">
+                    <div>
+                      <h3>Master official-code registry</h3>
+                      <p>Reuse shared official documents across agencies. Upload only local material that is not already in the registry.</p>
+                    </div>
+                    <label className="library-search registry-search">
+                      <Search size={16} />
+                      <input
+                        value={registrySearch}
+                        onChange={(event) => setRegistrySearch(event.target.value)}
+                        placeholder="Search official codes, state rules, SOPs"
+                      />
+                    </label>
+                  </div>
+                  <div className="preload-panel">
+                    <div>
+                      <span className="premium-badge"><Sparkles size={15} /> AI preload project</span>
+                      <h4>National food-code foundation</h4>
+                      <p>Seed official FDA model codes and every state code locator, then promote each source only after source verification, dedupe, chunking, and approval.</p>
+                    </div>
+                    <div className="preload-metrics">
+                      <div><strong>{preloadStats.fda}</strong><span>FDA editions / supplements</span></div>
+                      <div><strong>{preloadStats.states}</strong><span>state code locators</span></div>
+                      <div><strong>{preloadStats.verifiedStates}</strong><span>state sources ready</span></div>
+                      <div><strong>{preloadStats.pendingStates}</strong><span>need verification</span></div>
+                    </div>
+                    <div className="preload-steps">
+                      <span><CheckCircle2 size={15} /> Seed from official FDA Food Code pages</span>
+                      <span><CheckCircle2 size={15} /> Track 2017, 2022, and supplements separately</span>
+                      <span><Clock3 size={15} /> Verify each current state code from official state source</span>
+                      <span><Clock3 size={15} /> Chunk, fingerprint, approve, then expose to agencies</span>
+                    </div>
+                  </div>
+                  <div className="registry-list">
+                    {registryMatches.map((doc) => {
+                      const selected = activeDocIds.includes(doc.id);
+                      return (
+                        <article className={selected ? 'registry-row selected' : 'registry-row'} key={doc.id}>
+                          <div>
+                            <span className="pill"><FileCheck2 size={13} /> {doc.scope}</span>
+                            <h4>{doc.title}</h4>
+                            <p>{doc.authority} · {doc.jurisdiction} · v{doc.version} · effective {doc.effective}</p>
+                            <small>Fingerprint: {doc.fingerprint}</small>
+                          </div>
+                          <button type="button" disabled={selected} onClick={() => addMasterDocument(doc.id)}>
+                            {selected ? <CheckCircle2 size={16} /> : <Plus size={16} />}
+                            {selected ? 'In agency pool' : 'Use shared doc'}
+                          </button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="upload-review">
+                  <button className="draft-button" type="button" onClick={() => setShowUpload((value) => !value)}>
+                    <Upload size={17} />
+                    Upload new local document
+                  </button>
+                  {showUpload && (
+                    <div className="upload-review-body">
+                      <label className="upload-target compact-upload">
+                        <Upload size={20} />
+                        <input type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.csv,.txt" onChange={handleAdminUpload} />
+                        <span>Drop in ordinance, SOP, guidance, or form file</span>
+                      </label>
+                      <div className="pending-list">
+                        {pendingUploads.length ? (
+                          pendingUploads.map((upload) => (
+                            <div className="pending-row" key={upload.id}>
+                              <strong>{upload.name}</strong>
+                              <span>{upload.size} · {upload.status}</span>
+                              {upload.duplicate && <small>Looks similar to: {upload.duplicate}</small>}
+                            </div>
+                          ))
+                        ) : (
+                          <p className="muted">New uploads enter dedupe, source validation, versioning, and approval before they become available to any agency.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </article>
+            )}
+          </div>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App />);
