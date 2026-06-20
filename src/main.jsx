@@ -433,6 +433,13 @@ const INSPECTION_STATUSES = [
   { id: 'NO', label: 'N/O', description: 'Not observed' }
 ];
 
+const CHECKLIST_VIEW_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'unmarked', label: 'Unmarked' },
+  { id: 'out', label: 'Out' },
+  { id: 'done', label: 'Done' }
+];
+
 const VIOLATION_STATUS_OPTIONS = ['Violation', 'Repeat', 'COS'];
 
 const CANNED_VIOLATION_COMMENTS = [
@@ -644,6 +651,7 @@ function App() {
   const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
   const [violationModalItem, setViolationModalItem] = useState(null);
   const [checklistCategory, setChecklistCategory] = useState('All categories');
+  const [checklistViewFilter, setChecklistViewFilter] = useState('all');
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [activeDepartmentId, setActiveDepartmentId] = useState('gwinnett-ga');
@@ -687,10 +695,18 @@ function App() {
     };
   }, []);
   const checklistCategories = useMemo(() => ['All categories', ...new Set(CHECKLIST_ITEMS.map((item) => item.category))], []);
-  const visibleChecklistItems = useMemo(
-    () => CHECKLIST_ITEMS.filter((item) => checklistCategory === 'All categories' || item.category === checklistCategory),
-    [checklistCategory]
-  );
+  const visibleChecklistItems = useMemo(() => {
+    return CHECKLIST_ITEMS.filter((item) => {
+      const categoryMatches = checklistCategory === 'All categories' || item.category === checklistCategory;
+      const status = checklistStatuses[item.id];
+      const filterMatches =
+        checklistViewFilter === 'all' ||
+        (checklistViewFilter === 'unmarked' && !status) ||
+        (checklistViewFilter === 'out' && status === 'OUT') ||
+        (checklistViewFilter === 'done' && Boolean(status));
+      return categoryMatches && filterMatches;
+    });
+  }, [checklistCategory, checklistStatuses, checklistViewFilter]);
   const checklistCounts = useMemo(() => {
     const counts = { IN: 0, OUT: 0, NA: 0, NO: 0, blank: 0 };
     CHECKLIST_ITEMS.forEach((item) => {
@@ -1328,19 +1344,33 @@ function App() {
                     <h2>AI-assisted inspection</h2>
                     <p>Checklist imported from Import-Food 2025. Each item can be marked and assisted in its own violation context.</p>
                   </div>
-                  <label>
-                    <Filter size={16} />
-                    <select value={checklistCategory} onChange={(event) => setChecklistCategory(event.target.value)}>
-                      {checklistCategories.map((category) => (
-                        <option key={category}>{category}</option>
+                  <div className="inspection-controls">
+                    <label>
+                      <Filter size={16} />
+                      <select value={checklistCategory} onChange={(event) => setChecklistCategory(event.target.value)}>
+                        {checklistCategories.map((category) => (
+                          <option key={category}>{category}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} />
+                    </label>
+                    <div className="checklist-filter-tabs" aria-label="Checklist work queue filter">
+                      {CHECKLIST_VIEW_FILTERS.map((filter) => (
+                        <button
+                          key={filter.id}
+                          className={checklistViewFilter === filter.id ? 'active' : ''}
+                          type="button"
+                          onClick={() => setChecklistViewFilter(filter.id)}
+                        >
+                          {filter.label}
+                        </button>
                       ))}
-                    </select>
-                    <ChevronDown size={16} />
-                  </label>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="inspection-metrics">
-                  <div><strong>{CHECKLIST_ITEMS.length}</strong><span>items</span></div>
+                  <div><strong>{visibleChecklistItems.length}</strong><span>showing</span></div>
                   <div><strong>{checklistCounts.IN}</strong><span>in</span></div>
                   <div><strong>{checklistCounts.OUT}</strong><span>out</span></div>
                   <div><strong>{checklistCounts.NA + checklistCounts.NO}</strong><span>n/a or n/o</span></div>
