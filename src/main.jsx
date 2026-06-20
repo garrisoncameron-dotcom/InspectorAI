@@ -642,6 +642,7 @@ function App() {
   const [checklistStatuses, setChecklistStatuses] = useState({});
   const [violationDetails, setViolationDetails] = useState({});
   const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
+  const [violationModalItem, setViolationModalItem] = useState(null);
   const [checklistCategory, setChecklistCategory] = useState('All categories');
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const [departmentSearch, setDepartmentSearch] = useState('');
@@ -709,6 +710,9 @@ function App() {
   const activeViolationDetails = activeChecklistItem ? violationDetails[activeChecklistItem.id] : null;
   const activeCachedDate =
     activeChecklistItem && typeof window !== 'undefined' ? window.__violationDateCache?.[activeChecklistItem.id] : '';
+  const modalViolationDetails = violationModalItem ? violationDetails[violationModalItem.id] : null;
+  const modalCachedDate =
+    violationModalItem && typeof window !== 'undefined' ? window.__violationDateCache?.[violationModalItem.id] : '';
   const approvedDraftCount = draftChecklist.filter((item) => item.approved).length;
 
   useEffect(() => {
@@ -840,6 +844,9 @@ function App() {
           ...(current[item.id] ?? {})
         }
       }));
+      setViolationModalItem(item);
+    } else if (violationModalItem?.id === item.id) {
+      setViolationModalItem(null);
     }
   }
 
@@ -925,6 +932,100 @@ function App() {
         correctiveActionText: value || (current[itemId]?.correctiveActionText ?? '')
       }
     }));
+  }
+
+  function renderViolationCapture(item, details, cachedDate) {
+    return (
+      <div className="violation-capture">
+        <label className="repeat-toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(details?.repeat)}
+            onChange={(event) => updateViolationDetail(item.id, 'repeat', event.target.checked)}
+          />
+          Repeat
+        </label>
+        <label>
+          <span>Violation status</span>
+          <select
+            value={details?.violationStatus ?? 'Violation'}
+            onChange={(event) => updateViolationDetail(item.id, 'violationStatus', event.target.value)}
+          >
+            {VIOLATION_STATUS_OPTIONS.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Correct by date</span>
+          <input
+            type="date"
+            value={details?.correctByDate || cachedDate || ''}
+            onInput={(event) => {
+              window.__violationDateCache = {
+                ...(window.__violationDateCache ?? {}),
+                [item.id]: event.currentTarget.value
+              };
+              updateViolationDetail(item.id, 'correctByDate', event.currentTarget.value);
+            }}
+            onChange={(event) => {
+              window.__violationDateCache = {
+                ...(window.__violationDateCache ?? {}),
+                [item.id]: event.target.value
+              };
+              updateViolationDetail(item.id, 'correctByDate', event.target.value);
+            }}
+            onBlur={(event) => {
+              window.__violationDateCache = {
+                ...(window.__violationDateCache ?? {}),
+                [item.id]: event.currentTarget.value
+              };
+              updateViolationDetail(item.id, 'correctByDate', event.currentTarget.value);
+            }}
+          />
+        </label>
+        <label>
+          <span>Canned violation comments</span>
+          <select
+            value={details?.cannedComment ?? ''}
+            onChange={(event) => selectCannedComment(item.id, event.target.value)}
+          >
+            <option value="">Select canned comment</option>
+            {CANNED_VIOLATION_COMMENTS.map((comment) => (
+              <option key={comment} value={comment}>{comment}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Violation comment</span>
+          <textarea
+            value={details?.commentText ?? ''}
+            onChange={(event) => updateViolationDetail(item.id, 'commentText', event.target.value)}
+            placeholder="Enter violation observation details"
+          />
+        </label>
+        <label>
+          <span>Pre-defined corrective actions</span>
+          <select
+            value={details?.cannedCorrectiveAction ?? ''}
+            onChange={(event) => selectCannedCorrectiveAction(item.id, event.target.value)}
+          >
+            <option value="">Select corrective action</option>
+            {CANNED_CORRECTIVE_ACTIONS.map((action) => (
+              <option key={action} value={action}>{action}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Corrective action</span>
+          <textarea
+            value={details?.correctiveActionText ?? ''}
+            onChange={(event) => updateViolationDetail(item.id, 'correctiveActionText', event.target.value)}
+            placeholder="Enter corrective action details"
+          />
+        </label>
+      </div>
+    );
   }
 
   function selectDepartment(department) {
@@ -1319,98 +1420,13 @@ function App() {
                           <p>{activeAssist.suggestedNote}</p>
                         </div>
                         {checklistStatuses[activeChecklistItem.id] === 'OUT' && (
-                          <div className="violation-capture">
-                            <div className="panel-title">
+                          <div className="assist-block violation-summary">
+                            <strong>Violation details</strong>
+                            <p>{activeViolationDetails?.commentText || 'No violation comment entered yet.'}</p>
+                            <button className="draft-button" type="button" onClick={() => setViolationModalItem(activeChecklistItem)}>
                               <AlertTriangle size={17} />
-                              Violation details
-                            </div>
-                            <label className="repeat-toggle">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(activeViolationDetails?.repeat)}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'repeat', event.target.checked)}
-                              />
-                              Repeat
-                            </label>
-                            <label>
-                              <span>Violation status</span>
-                              <select
-                                value={activeViolationDetails?.violationStatus ?? 'Violation'}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'violationStatus', event.target.value)}
-                              >
-                                {VIOLATION_STATUS_OPTIONS.map((option) => (
-                                  <option key={option}>{option}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>Correct by date</span>
-                              <input
-                                type="date"
-                                value={activeViolationDetails?.correctByDate || activeCachedDate || ''}
-                                onInput={(event) => {
-                                  window.__violationDateCache = {
-                                    ...(window.__violationDateCache ?? {}),
-                                    [activeChecklistItem.id]: event.currentTarget.value
-                                  };
-                                  updateViolationDetail(activeChecklistItem.id, 'correctByDate', event.currentTarget.value);
-                                }}
-                                onChange={(event) => {
-                                  window.__violationDateCache = {
-                                    ...(window.__violationDateCache ?? {}),
-                                    [activeChecklistItem.id]: event.target.value
-                                  };
-                                  updateViolationDetail(activeChecklistItem.id, 'correctByDate', event.target.value);
-                                }}
-                                onBlur={(event) => {
-                                  window.__violationDateCache = {
-                                    ...(window.__violationDateCache ?? {}),
-                                    [activeChecklistItem.id]: event.currentTarget.value
-                                  };
-                                  updateViolationDetail(activeChecklistItem.id, 'correctByDate', event.currentTarget.value);
-                                }}
-                              />
-                            </label>
-                            <label>
-                              <span>Canned violation comments</span>
-                              <select
-                                value={activeViolationDetails?.cannedComment ?? ''}
-                                onChange={(event) => selectCannedComment(activeChecklistItem.id, event.target.value)}
-                              >
-                                <option value="">Select canned comment</option>
-                                {CANNED_VIOLATION_COMMENTS.map((comment) => (
-                                  <option key={comment} value={comment}>{comment}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>Violation comment</span>
-                              <textarea
-                                value={activeViolationDetails?.commentText ?? ''}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'commentText', event.target.value)}
-                                placeholder="Enter violation observation details"
-                              />
-                            </label>
-                            <label>
-                              <span>Pre-defined corrective actions</span>
-                              <select
-                                value={activeViolationDetails?.cannedCorrectiveAction ?? ''}
-                                onChange={(event) => selectCannedCorrectiveAction(activeChecklistItem.id, event.target.value)}
-                              >
-                                <option value="">Select corrective action</option>
-                                {CANNED_CORRECTIVE_ACTIONS.map((action) => (
-                                  <option key={action} value={action}>{action}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>Corrective action</span>
-                              <textarea
-                                value={activeViolationDetails?.correctiveActionText ?? ''}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'correctiveActionText', event.target.value)}
-                                placeholder="Enter corrective action details"
-                              />
-                            </label>
+                              Edit violation details
+                            </button>
                           </div>
                         )}
                         <div className="assist-block">
@@ -1801,6 +1817,37 @@ function App() {
           </div>
         </section>
       </section>
+      {violationModalItem && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="violation-modal" role="dialog" aria-modal="true" aria-labelledby="violation-modal-title">
+            <div className="modal-header">
+              <div>
+                <span className="premium-badge alert-badge">
+                  <AlertTriangle size={15} />
+                  Out violation
+                </span>
+                <h2 id="violation-modal-title">Violation details</h2>
+                <p>
+                  {violationModalItem.number}{violationModalItem.letter ? violationModalItem.letter : ''}: {violationModalItem.short}
+                </p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close violation details" onClick={() => setViolationModalItem(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            {renderViolationCapture(violationModalItem, modalViolationDetails, modalCachedDate)}
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setViolationModalItem(null)}>
+                Close
+              </button>
+              <button className="send-button modal-save" type="button" onClick={() => setViolationModalItem(null)}>
+                <CheckCircle2 size={18} />
+                Save details
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
