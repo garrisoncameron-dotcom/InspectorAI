@@ -858,6 +858,104 @@ h1 {
   gap: 8px;
 }
 
+.violation-chat {
+  display: grid;
+  gap: 12px;
+}
+
+.code-context {
+  display: grid;
+  gap: 8px;
+}
+
+.code-context div,
+.code-context p {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.code-context strong,
+.code-context span {
+  display: block;
+}
+
+.code-context strong {
+  color: var(--green);
+}
+
+.code-context span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.prompt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prompt-row button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--blue);
+  padding: 7px 10px;
+  font-size: 0.84rem;
+  line-height: 1.25;
+}
+
+.chat-thread {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-message {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.chat-message.assist {
+  border-color: #b8d5cb;
+  background: var(--green-soft);
+}
+
+.chat-message span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.chat-message p {
+  margin: 0;
+  line-height: 1.43;
+}
+
+.chat-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+  align-items: start;
+}
+
+.chat-input-row textarea {
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+  font-size: 0.94rem;
+}
+
 .repeat-toggle {
   width: max-content;
   display: inline-flex !important;
