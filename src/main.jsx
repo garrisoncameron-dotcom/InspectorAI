@@ -130,6 +130,178 @@ const APPROVED_DOCS = [
     ]
   },
   {
+    id: 'ga-food-service-rules-2025',
+    title: 'Georgia Food Service Rules and Regulations 511-6-1',
+    jurisdiction: 'Georgia',
+    appliesTo: ['Gwinnett County GA', 'Fulton County GA'],
+    source: 'Georgia Department of Public Health / Georgia Secretary of State',
+    status: 'Approved',
+    version: '2025 revision',
+    effective: '2025-02-12',
+    expires: 'Superseded by state rule update',
+    owner: 'Georgia Department of Public Health',
+    sections: [
+      {
+        ref: '511-6-1-.01',
+        page: 1,
+        severity: 'Reference',
+        topic: 'Definitions',
+        text:
+          'Georgia Rule 511-6-1 defines the controlling food service terms that should be used when interpreting inspection findings and checklist language.'
+      },
+      {
+        ref: '511-6-1-.02',
+        page: 8,
+        severity: 'Administrative',
+        topic: 'Administration',
+        text:
+          'Food service permits, responsibilities, inspection authority, and enforcement administration are controlled through Georgia Rule 511-6-1.'
+      },
+      {
+        ref: '511-6-1-.03(1)',
+        page: 12,
+        severity: 'Priority Foundation',
+        topic: 'Person in charge',
+        text:
+          'The person in charge is responsible for active managerial control, employee supervision, and demonstrating knowledge of food safety requirements during operation.'
+      },
+      {
+        ref: '511-6-1-.03(2)',
+        page: 14,
+        severity: 'Priority',
+        topic: 'Employee health',
+        text:
+          'The food service establishment must manage employee illness reporting, exclusions, and restrictions when symptoms or diagnosed illnesses create risk of foodborne disease transmission.'
+      },
+      {
+        ref: '511-6-1-.04(4)(a)',
+        page: 31,
+        severity: 'Priority',
+        topic: 'Approved source',
+        text:
+          'Food must be safe, unadulterated, honestly presented, and obtained from sources that comply with law before it is received or offered for service.'
+      },
+      {
+        ref: '511-6-1-.04(4)(c)',
+        page: 45,
+        severity: 'Priority',
+        topic: 'Cold holding',
+        text:
+          'Time/temperature control for safety food held cold is expected to remain at 41 F or below unless a rule-recognized exception or approved time-control procedure applies.'
+      },
+      {
+        ref: '511-6-1-.04(4)(c)',
+        page: 46,
+        severity: 'Priority',
+        topic: 'Hot holding',
+        text:
+          'Time/temperature control for safety food held hot is expected to remain at 135 F or above unless a rule-recognized exception or approved time-control procedure applies.'
+      },
+      {
+        ref: '511-6-1-.04(6)',
+        page: 57,
+        severity: 'Priority',
+        topic: 'Protection from contamination',
+        text:
+          'Food must be protected from cross-contamination during storage, preparation, holding, display, and service, including separation of raw animal foods and ready-to-eat foods.'
+      },
+      {
+        ref: '511-6-1-.04(7)',
+        page: 63,
+        severity: 'Priority Foundation',
+        topic: 'Date marking',
+        text:
+          'Ready-to-eat time/temperature control for safety food held under refrigeration must be marked and controlled so the holding period can be verified.'
+      },
+      {
+        ref: '511-6-1-.05',
+        page: 78,
+        severity: 'Priority Foundation',
+        topic: 'Food-contact surfaces',
+        text:
+          'Equipment and utensils must be designed, maintained, cleaned, and sanitized so food-contact surfaces do not contaminate food.'
+      },
+      {
+        ref: '511-6-1-.06',
+        page: 96,
+        severity: 'Priority Foundation',
+        topic: 'Handwashing facilities',
+        text:
+          'Plumbing and handwashing facilities must be available, supplied, accessible, and used in a way that supports required employee handwashing.'
+      },
+      {
+        ref: '511-6-1-.07',
+        page: 114,
+        severity: 'Core',
+        topic: 'Physical facilities',
+        text:
+          'The physical facility must be maintained so floors, walls, ceilings, lighting, ventilation, and premises conditions do not create food safety risks.'
+      },
+      {
+        ref: '511-6-1-.10',
+        page: 141,
+        severity: 'Administrative',
+        topic: 'Enforcement',
+        text:
+          'Compliance actions should be tied to the controlling Georgia rule, inspection findings, correction status, and local enforcement procedures.'
+      }
+    ]
+  },
+  {
+    id: 'ga-food-service-interpretation-manual-2025',
+    title: 'Georgia Food Service Interpretation Manual',
+    jurisdiction: 'Georgia',
+    appliesTo: ['Gwinnett County GA', 'Fulton County GA'],
+    source: 'Georgia Department of Public Health',
+    status: 'Approved',
+    version: 'February 2025 update',
+    effective: '2025-02-12',
+    expires: 'Superseded by state manual update',
+    owner: 'Georgia Department of Public Health',
+    sections: [
+      {
+        ref: 'DPH Manual · Public health reasons',
+        page: 6,
+        severity: 'Guidance',
+        topic: 'Public health reason',
+        text:
+          'Inspection decisions should connect the observed condition to the public health reason behind the rule, especially for priority and priority foundation items.'
+      },
+      {
+        ref: 'DPH Manual · Marking instructions',
+        page: 18,
+        severity: 'Procedure',
+        topic: 'Evidence capture',
+        text:
+          'Inspection marking should distinguish compliant, out-of-compliance, not applicable, and not observed findings, and should preserve clear notes for cited out items.'
+      },
+      {
+        ref: 'DPH Manual · Temperature chart',
+        page: 41,
+        severity: 'Guidance',
+        topic: 'Cold holding',
+        text:
+          'Temperature findings should include the food item, measured temperature, equipment or location, time context when relevant, and corrective action taken or required.'
+      },
+      {
+        ref: 'DPH Manual · Corrective actions',
+        page: 64,
+        severity: 'Procedure',
+        topic: 'Corrective action',
+        text:
+          'Corrective action language should state what was corrected during inspection or what must be corrected by the assigned date, tied to the observed out item.'
+      },
+      {
+        ref: 'DPH Manual · Employee health tools',
+        page: 73,
+        severity: 'Guidance',
+        topic: 'Employee health',
+        text:
+          'Employee health review should verify reporting awareness, symptom controls, exclusion or restriction decisions, and documentation when illness risk is observed.'
+      }
+    ]
+  },
+  {
     id: 'fulton-food-code-2025',
     title: 'Fulton County Food Protection Field Manual',
     jurisdiction: 'Fulton County GA',
@@ -210,7 +382,12 @@ const HEALTH_DEPARTMENTS = [
     id: 'gwinnett-ga',
     name: 'Gwinnett County GA',
     agency: 'Gwinnett County Environmental Health',
-    docs: ['gwinnett-food-code-2025', 'gwinnett-inspection-sop-2025'],
+    docs: [
+      'gwinnett-food-code-2025',
+      'ga-food-service-rules-2025',
+      'ga-food-service-interpretation-manual-2025',
+      'gwinnett-inspection-sop-2025'
+    ],
     checklist: 'Import-Food 2025',
     status: 'Ready'
   },
@@ -218,7 +395,7 @@ const HEALTH_DEPARTMENTS = [
     id: 'fulton-ga',
     name: 'Fulton County GA',
     agency: 'Fulton County Board of Health',
-    docs: ['fulton-food-code-2025'],
+    docs: ['fulton-food-code-2025', 'ga-food-service-rules-2025', 'ga-food-service-interpretation-manual-2025'],
     checklist: 'Food Protection Field Manual',
     status: 'Pilot'
   }
@@ -351,19 +528,25 @@ const MASTER_CODE_LIBRARY = APPROVED_DOCS.map((doc) => ({
   status: doc.status,
   scope: doc.id.includes('sop') ? 'Local SOP / form' : 'Official code reference',
   fingerprint: `${doc.id}:${doc.version}`
-})).concat(FDA_FOOD_CODE_PRELOAD, STATE_CODE_PRELOAD, [
-  {
-    id: 'ga-food-service-rules-2025',
-    title: 'Georgia Food Service Rules and Regulations',
-    jurisdiction: 'Georgia',
-    authority: 'Georgia Department of Public Health',
-    version: '2025.0',
-    effective: '2025-07-01',
-    status: 'Available',
-    scope: 'Statewide official code',
-    fingerprint: 'ga-food-service-rules:2025.0'
-  }
-]);
+})).concat(FDA_FOOD_CODE_PRELOAD, STATE_CODE_PRELOAD);
+
+const REQUIRED_SOURCE_TOPICS = [
+  'Definitions',
+  'Administration',
+  'Person in charge',
+  'Employee health',
+  'Approved source',
+  'Protection from contamination',
+  'Cold holding',
+  'Hot holding',
+  'Date marking',
+  'Food-contact surfaces',
+  'Handwashing facilities',
+  'Physical facilities',
+  'Evidence capture',
+  'Corrective action',
+  'Enforcement'
+];
 
 const QUICK_PROMPTS = [
   'Cold holding chicken at 48 F in Gwinnett County',
@@ -535,6 +718,27 @@ function scoreSection(query, doc, section) {
   return wordScore + (exactTopic ? 4 : 0) + tempBoost + handBoost + photoBoost;
 }
 
+function docAppliesToJurisdiction(doc, jurisdiction) {
+  if (jurisdiction === 'All jurisdictions') return true;
+  if (doc.jurisdiction === jurisdiction) return true;
+  if (doc.appliesTo?.includes(jurisdiction)) return true;
+  if (doc.jurisdiction === 'Georgia' && jurisdiction.endsWith(' GA')) return true;
+  return false;
+}
+
+function sourceCoverageForDocs(docs) {
+  const loadedTopics = new Set(docs.flatMap((doc) => doc.sections.map((section) => section.topic)));
+  const coveredTopics = REQUIRED_SOURCE_TOPICS.filter((topic) => loadedTopics.has(topic));
+  const missingTopics = REQUIRED_SOURCE_TOPICS.filter((topic) => !loadedTopics.has(topic));
+  return {
+    coveredTopics,
+    missingTopics,
+    total: REQUIRED_SOURCE_TOPICS.length,
+    covered: coveredTopics.length,
+    percent: Math.round((coveredTopics.length / REQUIRED_SOURCE_TOPICS.length) * 100)
+  };
+}
+
 function inferredTopics(query) {
   const text = normalize(query);
   const topics = [];
@@ -548,6 +752,9 @@ function inferredTopics(query) {
   if (/(handwashing facilities|accessible|supplied|sink)/.test(text)) topics.push('Handwashing facilities');
   if (/(surface|slicer|utensil|board|clean|residue)/.test(text)) topics.push('Food-contact surfaces');
   if (/(date|label|discard|ready to eat|rte)/.test(text)) topics.push('Date marking');
+  if (/(permit|inspection authority|compliance|enforcement|suspend|revoke|hearing|administrat)/.test(text)) topics.push('Enforcement');
+  if (/(definition|means|define|term)/.test(text)) topics.push('Definitions');
+  if (/(corrective action|correct by|corrected during|cos|follow up)/.test(text)) topics.push('Corrective action');
   if (/(embargo|adulterat|source integrity)/.test(text)) topics.push('Embargo');
   if (/(photo|picture|image)/.test(text)) topics.push('Photo review');
   if (/(note|document|wording|write|include|evidence)/.test(text)) topics.push('Evidence capture');
@@ -565,23 +772,26 @@ function findEvidence(query, jurisdiction, activeDocIds = APPROVED_DOCS.map((doc
   )
     .filter((item) => {
       const docIsActive = activeDocIds.includes(item.doc.id);
-      const jurisdictionMatches = jurisdiction === 'All jurisdictions' || item.doc.jurisdiction === jurisdiction;
+      const jurisdictionMatches = docAppliesToJurisdiction(item.doc, jurisdiction);
       const topicMatches = !topics.length || topics.includes(item.section.topic);
       return docIsActive && item.score > 1 && jurisdictionMatches && topicMatches;
     })
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+    .slice(0, 5);
 
   return matches;
 }
 
-function composeAnswer(query, evidence) {
+function composeAnswer(query, evidence, sourceContext = {}) {
   if (!evidence.length) {
+    const coverageLine = sourceContext.coverage
+      ? ` Current source coverage is ${sourceContext.coverage.covered}/${sourceContext.coverage.total} core topics.`
+      : '';
     return {
       status: 'Unsupported',
       title: 'No approved-source answer found',
       body:
-        'I cannot determine this from the approved documentation currently loaded. Use supervisor review or add the controlling document before relying on an answer.',
+        `I cannot determine this from the approved documentation currently loaded for ${sourceContext.jurisdiction ?? 'this jurisdiction'}.${coverageLine} Use supervisor review or add the controlling document before relying on an answer.`,
       note: 'No citation is available because no approved excerpt matched the question.'
     };
   }
@@ -613,7 +823,7 @@ function composeAnswer(query, evidence) {
     title: `Grounded answer from ${evidence.length} approved source${evidence.length === 1 ? '' : 's'}`,
     body,
     note:
-      'This answer is constrained to the approved library. Review the cited sections before taking enforcement action.'
+      `This answer is constrained to the approved ${sourceContext.jurisdiction ?? 'jurisdiction'} library. Review the cited sections before taking enforcement action.`
   };
 }
 
@@ -631,7 +841,10 @@ function findChecklistEvidence(item, jurisdiction, activeDocIds) {
 
   return APPROVED_DOCS.flatMap((doc) =>
     doc.sections
-      .filter((section) => activeDocIds.includes(doc.id) && section.topic === 'Evidence capture')
+      .filter(
+        (section) =>
+          activeDocIds.includes(doc.id) && docAppliesToJurisdiction(doc, jurisdiction) && section.topic === 'Evidence capture'
+      )
       .map((section) => ({ doc, section, score: 1 }))
   ).slice(0, 1);
 }
@@ -762,7 +975,12 @@ function App() {
   const [showUpload, setShowUpload] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
   const [configDepartmentId, setConfigDepartmentId] = useState('gwinnett-ga');
-  const [configSourceIds, setConfigSourceIds] = useState(['gwinnett-food-code-2025', 'gwinnett-inspection-sop-2025', 'ga-food-service-rules-2025']);
+  const [configSourceIds, setConfigSourceIds] = useState([
+    'gwinnett-food-code-2025',
+    'ga-food-service-rules-2025',
+    'ga-food-service-interpretation-manual-2025',
+    'gwinnett-inspection-sop-2025'
+  ]);
   const [draftChecklist, setDraftChecklist] = useState([]);
   const [lockedProfile, setLockedProfile] = useState(null);
   const recognitionRef = useRef(null);
@@ -819,6 +1037,7 @@ function App() {
   const activeDocs = MASTER_CODE_LIBRARY.filter((doc) => activeDocIds.includes(doc.id));
   const activeSourceDocs = APPROVED_DOCS.filter((doc) => activeDocIds.includes(doc.id));
   const approvedCount = activeSourceDocs.reduce((count, doc) => count + doc.sections.length, 0);
+  const sourceCoverage = sourceCoverageForDocs(activeSourceDocs);
   const activeAssist = activeChecklistItem
     ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
     : null;
@@ -890,7 +1109,7 @@ function App() {
     const trimmed = nextQuery.trim();
     if (!trimmed) return;
     const evidence = findEvidence(trimmed, jurisdiction, activeDocIds);
-    const composed = composeAnswer(trimmed, evidence);
+    const composed = composeAnswer(trimmed, evidence, { jurisdiction, coverage: sourceCoverage });
     const result = {
       id: crypto.randomUUID(),
       query: trimmed,
@@ -1475,6 +1694,34 @@ function App() {
                       </button>
                     ))}
                   </div>
+                </section>
+
+                <section className="source-pack-panel" aria-label="Active trusted source pack">
+                  <div>
+                    <span className="source-pack-kicker"><ShieldCheck size={15} /> {activeDepartment.name} trusted source pack</span>
+                    <h2>{sourceCoverage.percent}% core topic coverage</h2>
+                    <p>
+                      {activeSourceDocs.length} approved documents · {approvedCount} searchable sections ·
+                      Georgia statewide rules applied to {activeDepartment.name}
+                    </p>
+                  </div>
+                  <div className="source-pack-meter" aria-hidden="true">
+                    <span style={{ width: `${sourceCoverage.percent}%` }} />
+                  </div>
+                  <div className="source-doc-list">
+                    {activeSourceDocs.map((doc) => (
+                      <span key={doc.id}>
+                        <FileCheck2 size={14} />
+                        {doc.title}
+                      </span>
+                    ))}
+                  </div>
+                  {sourceCoverage.missingTopics.length > 0 && (
+                    <p className="source-pack-note">
+                      Remaining ingestion targets: {sourceCoverage.missingTopics.slice(0, 4).join(', ')}
+                      {sourceCoverage.missingTopics.length > 4 ? '...' : ''}
+                    </p>
+                  )}
                 </section>
 
                 <section className="results-grid">

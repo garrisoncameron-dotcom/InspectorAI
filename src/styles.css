@@ -426,6 +426,77 @@ h1 {
   padding: 16px;
 }
 
+.source-pack-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #bfd2ca;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(232, 244, 239, 0.92), rgba(255, 255, 255, 0.9));
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.source-pack-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.source-pack-panel h2 {
+  margin: 6px 0 3px;
+  font-size: 1.35rem;
+}
+
+.source-pack-panel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.source-pack-meter {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid #bdd2c9;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.source-pack-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.source-doc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.source-doc-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink);
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
+.source-pack-note {
+  font-size: 0.86rem;
+}
+
 .feature-shell {
   display: grid;
   grid-template-columns: 184px minmax(0, 1fr);
