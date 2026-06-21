@@ -78,6 +78,54 @@ const APPROVED_DOCS = [
         topic: 'Date marking',
         text:
           'Ready-to-eat refrigerated food prepared on site and held more than 24 hours must be clearly date marked and discarded within the approved holding period.'
+      },
+      {
+        ref: '2-102.11',
+        page: 18,
+        severity: 'Priority Foundation',
+        topic: 'Person in charge',
+        text:
+          'The person in charge must be present during food service operations, demonstrate knowledge of food safety requirements, and ensure employees follow required procedures.'
+      },
+      {
+        ref: '2-201.11',
+        page: 21,
+        severity: 'Priority',
+        topic: 'Employee health',
+        text:
+          'Food employees with reportable symptoms or diagnoses must be restricted or excluded as required, and the person in charge must apply employee health reporting procedures.'
+      },
+      {
+        ref: '3-201.11',
+        page: 36,
+        severity: 'Priority',
+        topic: 'Approved source',
+        text:
+          'Food must be obtained from sources that comply with law and must be safe, unadulterated, and honestly presented when received and used.'
+      },
+      {
+        ref: '3-302.11',
+        page: 49,
+        severity: 'Priority',
+        topic: 'Protection from contamination',
+        text:
+          'Food must be protected from cross-contamination by separating raw animal foods, ready-to-eat foods, equipment, utensils, and other contamination sources.'
+      },
+      {
+        ref: '4-601.11(A)',
+        page: 86,
+        severity: 'Priority Foundation',
+        topic: 'Food-contact surfaces',
+        text:
+          'Equipment food-contact surfaces and utensils must be clean to sight and touch before use and after interruption that may contaminate them.'
+      },
+      {
+        ref: '5-205.11',
+        page: 108,
+        severity: 'Priority Foundation',
+        topic: 'Handwashing facilities',
+        text:
+          'A handwashing sink must be maintained accessible at all times for employee use and may not be used for purposes other than handwashing.'
       }
     ]
   },
@@ -433,6 +481,13 @@ const INSPECTION_STATUSES = [
   { id: 'NO', label: 'N/O', description: 'Not observed' }
 ];
 
+const CHECKLIST_VIEW_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'unmarked', label: 'Unmarked' },
+  { id: 'out', label: 'Out' },
+  { id: 'done', label: 'Done' }
+];
+
 const VIOLATION_STATUS_OPTIONS = ['Violation', 'Repeat', 'COS'];
 
 const CANNED_VIOLATION_COMMENTS = [
@@ -483,9 +538,14 @@ function scoreSection(query, doc, section) {
 function inferredTopics(query) {
   const text = normalize(query);
   const topics = [];
+  if (/(pic|person in charge|certified food protection|manager|supervision|knowledge|duties)/.test(text)) topics.push('Person in charge');
+  if (/(employee health|restriction|exclusion|symptom|diagnos|discharge|vomit|diarrh)/.test(text)) topics.push('Employee health');
+  if (/(approved source|obtained from approved|received|shellstock|parasite|records|condition|unadulterated)/.test(text)) topics.push('Approved source');
+  if (/(contamination|cross|separat|storage|display|preparation|raw|ready-to-eat|bare hand)/.test(text)) topics.push('Protection from contamination');
   if (/(cold|41|48|refrigerat|temperature|tcs)/.test(text)) topics.push('Cold holding');
   if (/(hot|135)/.test(text)) topics.push('Hot holding');
   if (/(hand|sink|wash|soap)/.test(text)) topics.push('Handwashing');
+  if (/(handwashing facilities|accessible|supplied|sink)/.test(text)) topics.push('Handwashing facilities');
   if (/(surface|slicer|utensil|board|clean|residue)/.test(text)) topics.push('Food-contact surfaces');
   if (/(date|label|discard|ready to eat|rte)/.test(text)) topics.push('Date marking');
   if (/(embargo|adulterat|source integrity)/.test(text)) topics.push('Embargo');
@@ -561,23 +621,67 @@ function checklistQuery(item) {
   return `${item.short} ${item.category}`;
 }
 
+function findChecklistEvidence(item, jurisdiction, activeDocIds) {
+  const query = checklistQuery(item);
+  const direct = findEvidence(query, jurisdiction, activeDocIds);
+  if (direct.length) return direct;
+
+  const sop = findEvidence(`${query} note document evidence corrective action`, jurisdiction, activeDocIds);
+  if (sop.length) return sop;
+
+  return APPROVED_DOCS.flatMap((doc) =>
+    doc.sections
+      .filter((section) => activeDocIds.includes(doc.id) && section.topic === 'Evidence capture')
+      .map((section) => ({ doc, section, score: 1 }))
+  ).slice(0, 1);
+}
+
 function composeInspectionAssist(item, status, jurisdiction, activeDocIds) {
-  const evidence = findEvidence(checklistQuery(item), jurisdiction, activeDocIds);
+  const evidence = findChecklistEvidence(item, jurisdiction, activeDocIds);
   const selectedStatus = INSPECTION_STATUSES.find((option) => option.id === status);
   const statusText = selectedStatus ? selectedStatus.description : 'not marked yet';
   const isOut = status === 'OUT';
   const citation = evidence[0];
+  const citationLine = citation ? `${citation.section.ref} (${citation.section.topic})` : 'the checklist item and supervisor review';
 
   return {
     evidence,
     title: `${item.number}${item.letter ? item.letter : ''}: ${item.short}`,
     body: citation
-      ? composeAnswer(checklistQuery(item), evidence).body
+      ? `This item is being assisted against ${citationLine}. ${composeAnswer(checklistQuery(item), evidence).body}`
       : 'No approved source excerpt is currently mapped to this checklist item. Use the checklist item text and supervisor review until the controlling code section is approved in the library.',
     suggestedNote: isOut
       ? `Observed ${item.short.toLowerCase()} out of compliance at [location]. Document the condition, measured value if applicable, corrective action requested, and whether correction occurred during inspection.`
       : `Current mark: ${statusText}. Use AI Assist again after selecting OUT to draft violation-ready observation language.`
   };
+}
+
+function composeViolationChatAnswer(question, item, evidence, details) {
+  if (!evidence.length) {
+    return 'I do not have an approved controlling excerpt mapped to this checklist item yet. I can help structure the observation, but enforcement interpretation should wait for an approved source or supervisor review.';
+  }
+
+  const text = normalize(question);
+  const primary = evidence[0];
+  const detailContext = details?.commentText ? ` Your current draft observation says: "${details.commentText}"` : '';
+  if (/(what|explain|why|standard|code|require)/.test(text)) {
+    return `${primary.section.ref} says: ${primary.section.text} For this checklist item, focus on whether the observed condition meets that standard.${detailContext}`;
+  }
+  if (/(document|note|write|include|comment)/.test(text)) {
+    return `For this violation note, include the observed condition, exact location, relevant measurement or behavior, corrective action requested, and whether it was corrected during inspection. Citation to review: ${primary.section.ref}, ${primary.section.topic}.${detailContext}`;
+  }
+  if (/(cos|corrected|repeat|status|correct by|date)/.test(text)) {
+    return `Use the violation status based on what happened during the inspection: choose COS only if correction occurred during the inspection, repeat if the department record supports recurrence, and set a correct-by date when the condition remains unresolved. Review ${primary.section.ref} before finalizing.`;
+  }
+  return `Based on ${primary.section.ref} (${primary.section.topic}), the approved excerpt says: ${primary.section.text} Tie your decision back to the actual observed condition and document corrective action.`;
+}
+
+function seedViolationPrompts(item) {
+  return [
+    `What does the code require for ${item.short}?`,
+    'What should my violation note include?',
+    'When should I mark this COS or repeat?'
+  ];
 }
 
 function severityForItem(item) {
@@ -641,8 +745,12 @@ function App() {
   const [activeFeature, setActiveFeature] = useState('ask');
   const [checklistStatuses, setChecklistStatuses] = useState({});
   const [violationDetails, setViolationDetails] = useState({});
+  const [violationChats, setViolationChats] = useState({});
+  const [violationChatDrafts, setViolationChatDrafts] = useState({});
   const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
+  const [violationModalItem, setViolationModalItem] = useState(null);
   const [checklistCategory, setChecklistCategory] = useState('All categories');
+  const [checklistViewFilter, setChecklistViewFilter] = useState('all');
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [activeDepartmentId, setActiveDepartmentId] = useState('gwinnett-ga');
@@ -686,10 +794,18 @@ function App() {
     };
   }, []);
   const checklistCategories = useMemo(() => ['All categories', ...new Set(CHECKLIST_ITEMS.map((item) => item.category))], []);
-  const visibleChecklistItems = useMemo(
-    () => CHECKLIST_ITEMS.filter((item) => checklistCategory === 'All categories' || item.category === checklistCategory),
-    [checklistCategory]
-  );
+  const visibleChecklistItems = useMemo(() => {
+    return CHECKLIST_ITEMS.filter((item) => {
+      const categoryMatches = checklistCategory === 'All categories' || item.category === checklistCategory;
+      const status = checklistStatuses[item.id];
+      const filterMatches =
+        checklistViewFilter === 'all' ||
+        (checklistViewFilter === 'unmarked' && !status) ||
+        (checklistViewFilter === 'out' && status === 'OUT') ||
+        (checklistViewFilter === 'done' && Boolean(status));
+      return categoryMatches && filterMatches;
+    });
+  }, [checklistCategory, checklistStatuses, checklistViewFilter]);
   const checklistCounts = useMemo(() => {
     const counts = { IN: 0, OUT: 0, NA: 0, NO: 0, blank: 0 };
     CHECKLIST_ITEMS.forEach((item) => {
@@ -707,8 +823,18 @@ function App() {
     ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
     : null;
   const activeViolationDetails = activeChecklistItem ? violationDetails[activeChecklistItem.id] : null;
+  const activeViolationChat = activeChecklistItem ? violationChats[activeChecklistItem.id] ?? [] : [];
+  const activeViolationChatDraft = activeChecklistItem ? violationChatDrafts[activeChecklistItem.id] ?? '' : '';
   const activeCachedDate =
     activeChecklistItem && typeof window !== 'undefined' ? window.__violationDateCache?.[activeChecklistItem.id] : '';
+  const modalViolationDetails = violationModalItem ? violationDetails[violationModalItem.id] : null;
+  const modalViolationAssist = violationModalItem
+    ? composeInspectionAssist(violationModalItem, checklistStatuses[violationModalItem.id], jurisdiction, activeDocIds)
+    : null;
+  const modalViolationChat = violationModalItem ? violationChats[violationModalItem.id] ?? [] : [];
+  const modalViolationChatDraft = violationModalItem ? violationChatDrafts[violationModalItem.id] ?? '' : '';
+  const modalCachedDate =
+    violationModalItem && typeof window !== 'undefined' ? window.__violationDateCache?.[violationModalItem.id] : '';
   const approvedDraftCount = draftChecklist.filter((item) => item.approved).length;
 
   useEffect(() => {
@@ -840,6 +966,9 @@ function App() {
           ...(current[item.id] ?? {})
         }
       }));
+      setViolationModalItem(item);
+    } else if (violationModalItem?.id === item.id) {
+      setViolationModalItem(null);
     }
   }
 
@@ -925,6 +1054,184 @@ function App() {
         correctiveActionText: value || (current[itemId]?.correctiveActionText ?? '')
       }
     }));
+  }
+
+  function askViolationQuestion(item, evidence) {
+    const question = (violationChatDrafts[item.id] ?? '').trim();
+    if (!question) return;
+    const answerText = composeViolationChatAnswer(question, item, evidence, violationDetails[item.id]);
+    setViolationChats((current) => ({
+      ...current,
+      [item.id]: [
+        ...(current[item.id] ?? []),
+        { id: crypto.randomUUID(), role: 'inspector', text: question },
+        { id: crypto.randomUUID(), role: 'assist', text: answerText }
+      ].slice(-8)
+    }));
+    setViolationChatDrafts((current) => ({ ...current, [item.id]: '' }));
+  }
+
+  function useViolationPrompt(item, prompt, evidence) {
+    const answerText = composeViolationChatAnswer(prompt, item, evidence, violationDetails[item.id]);
+    setViolationChats((current) => ({
+      ...current,
+      [item.id]: [
+        ...(current[item.id] ?? []),
+        { id: crypto.randomUUID(), role: 'inspector', text: prompt },
+        { id: crypto.randomUUID(), role: 'assist', text: answerText }
+      ].slice(-8)
+    }));
+    setViolationChatDrafts((current) => ({ ...current, [item.id]: '' }));
+  }
+
+  function renderViolationChat(item, assist, messages, draft) {
+    return (
+      <div className="violation-chat">
+        <div className="panel-title">
+          <Sparkles size={17} />
+          Ask AI about this item
+        </div>
+        <div className="code-context">
+          {assist.evidence.length ? (
+            assist.evidence.map(({ doc, section }) => (
+              <div key={`${doc.id}-${section.ref}`}>
+                <strong>{section.ref}</strong>
+                <span>{section.topic} · {doc.title}</span>
+              </div>
+            ))
+          ) : (
+            <p>No approved citation mapped yet.</p>
+          )}
+        </div>
+        <div className="prompt-row">
+          {seedViolationPrompts(item).map((prompt) => (
+            <button key={prompt} type="button" onClick={() => useViolationPrompt(item, prompt, assist.evidence)}>
+              {prompt}
+            </button>
+          ))}
+        </div>
+        <div className="chat-thread">
+          {messages.length ? (
+            messages.map((message) => (
+              <div className={`chat-message ${message.role}`} key={message.id}>
+                <span>{message.role === 'assist' ? 'AI Assist' : 'Inspector'}</span>
+                <p>{message.text}</p>
+              </div>
+            ))
+          ) : (
+            <p className="muted">Ask a question about this checklist item, citation, documentation, COS, repeat, or corrective action.</p>
+          )}
+        </div>
+        <div className="chat-input-row">
+          <textarea
+            value={draft}
+            onChange={(event) => setViolationChatDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') askViolationQuestion(item, assist.evidence);
+            }}
+            placeholder="Ask for clarification about this violation"
+            aria-label="Ask AI about this violation"
+          />
+          <button className="send-button" type="button" onClick={() => askViolationQuestion(item, assist.evidence)} aria-label="Ask violation AI">
+            <Send size={18} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderViolationCapture(item, details, cachedDate) {
+    return (
+      <div className="violation-capture">
+        <label className="repeat-toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(details?.repeat)}
+            onChange={(event) => updateViolationDetail(item.id, 'repeat', event.target.checked)}
+          />
+          Repeat
+        </label>
+        <label>
+          <span>Violation status</span>
+          <select
+            value={details?.violationStatus ?? 'Violation'}
+            onChange={(event) => updateViolationDetail(item.id, 'violationStatus', event.target.value)}
+          >
+            {VIOLATION_STATUS_OPTIONS.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Correct by date</span>
+          <input
+            type="date"
+            value={details?.correctByDate || cachedDate || ''}
+            onInput={(event) => {
+              window.__violationDateCache = {
+                ...(window.__violationDateCache ?? {}),
+                [item.id]: event.currentTarget.value
+              };
+              updateViolationDetail(item.id, 'correctByDate', event.currentTarget.value);
+            }}
+            onChange={(event) => {
+              window.__violationDateCache = {
+                ...(window.__violationDateCache ?? {}),
+                [item.id]: event.target.value
+              };
+              updateViolationDetail(item.id, 'correctByDate', event.target.value);
+            }}
+            onBlur={(event) => {
+              window.__violationDateCache = {
+                ...(window.__violationDateCache ?? {}),
+                [item.id]: event.currentTarget.value
+              };
+              updateViolationDetail(item.id, 'correctByDate', event.currentTarget.value);
+            }}
+          />
+        </label>
+        <label>
+          <span>Canned violation comments</span>
+          <select
+            value={details?.cannedComment ?? ''}
+            onChange={(event) => selectCannedComment(item.id, event.target.value)}
+          >
+            <option value="">Select canned comment</option>
+            {CANNED_VIOLATION_COMMENTS.map((comment) => (
+              <option key={comment} value={comment}>{comment}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Violation comment</span>
+          <textarea
+            value={details?.commentText ?? ''}
+            onChange={(event) => updateViolationDetail(item.id, 'commentText', event.target.value)}
+            placeholder="Enter violation observation details"
+          />
+        </label>
+        <label>
+          <span>Pre-defined corrective actions</span>
+          <select
+            value={details?.cannedCorrectiveAction ?? ''}
+            onChange={(event) => selectCannedCorrectiveAction(item.id, event.target.value)}
+          >
+            <option value="">Select corrective action</option>
+            {CANNED_CORRECTIVE_ACTIONS.map((action) => (
+              <option key={action} value={action}>{action}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Corrective action</span>
+          <textarea
+            value={details?.correctiveActionText ?? ''}
+            onChange={(event) => updateViolationDetail(item.id, 'correctiveActionText', event.target.value)}
+            placeholder="Enter corrective action details"
+          />
+        </label>
+      </div>
+    );
   }
 
   function selectDepartment(department) {
@@ -1227,19 +1534,33 @@ function App() {
                     <h2>AI-assisted inspection</h2>
                     <p>Checklist imported from Import-Food 2025. Each item can be marked and assisted in its own violation context.</p>
                   </div>
-                  <label>
-                    <Filter size={16} />
-                    <select value={checklistCategory} onChange={(event) => setChecklistCategory(event.target.value)}>
-                      {checklistCategories.map((category) => (
-                        <option key={category}>{category}</option>
+                  <div className="inspection-controls">
+                    <label>
+                      <Filter size={16} />
+                      <select value={checklistCategory} onChange={(event) => setChecklistCategory(event.target.value)}>
+                        {checklistCategories.map((category) => (
+                          <option key={category}>{category}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} />
+                    </label>
+                    <div className="checklist-filter-tabs" aria-label="Checklist work queue filter">
+                      {CHECKLIST_VIEW_FILTERS.map((filter) => (
+                        <button
+                          key={filter.id}
+                          className={checklistViewFilter === filter.id ? 'active' : ''}
+                          type="button"
+                          onClick={() => setChecklistViewFilter(filter.id)}
+                        >
+                          {filter.label}
+                        </button>
                       ))}
-                    </select>
-                    <ChevronDown size={16} />
-                  </label>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="inspection-metrics">
-                  <div><strong>{CHECKLIST_ITEMS.length}</strong><span>items</span></div>
+                  <div><strong>{visibleChecklistItems.length}</strong><span>showing</span></div>
                   <div><strong>{checklistCounts.IN}</strong><span>in</span></div>
                   <div><strong>{checklistCounts.OUT}</strong><span>out</span></div>
                   <div><strong>{checklistCounts.NA + checklistCounts.NO}</strong><span>n/a or n/o</span></div>
@@ -1318,99 +1639,17 @@ function App() {
                           <strong>Inspection note support</strong>
                           <p>{activeAssist.suggestedNote}</p>
                         </div>
+                        <div className="assist-block">
+                          {renderViolationChat(activeChecklistItem, activeAssist, activeViolationChat, activeViolationChatDraft)}
+                        </div>
                         {checklistStatuses[activeChecklistItem.id] === 'OUT' && (
-                          <div className="violation-capture">
-                            <div className="panel-title">
+                          <div className="assist-block violation-summary">
+                            <strong>Violation details</strong>
+                            <p>{activeViolationDetails?.commentText || 'No violation comment entered yet.'}</p>
+                            <button className="draft-button" type="button" onClick={() => setViolationModalItem(activeChecklistItem)}>
                               <AlertTriangle size={17} />
-                              Violation details
-                            </div>
-                            <label className="repeat-toggle">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(activeViolationDetails?.repeat)}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'repeat', event.target.checked)}
-                              />
-                              Repeat
-                            </label>
-                            <label>
-                              <span>Violation status</span>
-                              <select
-                                value={activeViolationDetails?.violationStatus ?? 'Violation'}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'violationStatus', event.target.value)}
-                              >
-                                {VIOLATION_STATUS_OPTIONS.map((option) => (
-                                  <option key={option}>{option}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>Correct by date</span>
-                              <input
-                                type="date"
-                                value={activeViolationDetails?.correctByDate || activeCachedDate || ''}
-                                onInput={(event) => {
-                                  window.__violationDateCache = {
-                                    ...(window.__violationDateCache ?? {}),
-                                    [activeChecklistItem.id]: event.currentTarget.value
-                                  };
-                                  updateViolationDetail(activeChecklistItem.id, 'correctByDate', event.currentTarget.value);
-                                }}
-                                onChange={(event) => {
-                                  window.__violationDateCache = {
-                                    ...(window.__violationDateCache ?? {}),
-                                    [activeChecklistItem.id]: event.target.value
-                                  };
-                                  updateViolationDetail(activeChecklistItem.id, 'correctByDate', event.target.value);
-                                }}
-                                onBlur={(event) => {
-                                  window.__violationDateCache = {
-                                    ...(window.__violationDateCache ?? {}),
-                                    [activeChecklistItem.id]: event.currentTarget.value
-                                  };
-                                  updateViolationDetail(activeChecklistItem.id, 'correctByDate', event.currentTarget.value);
-                                }}
-                              />
-                            </label>
-                            <label>
-                              <span>Canned violation comments</span>
-                              <select
-                                value={activeViolationDetails?.cannedComment ?? ''}
-                                onChange={(event) => selectCannedComment(activeChecklistItem.id, event.target.value)}
-                              >
-                                <option value="">Select canned comment</option>
-                                {CANNED_VIOLATION_COMMENTS.map((comment) => (
-                                  <option key={comment} value={comment}>{comment}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>Violation comment</span>
-                              <textarea
-                                value={activeViolationDetails?.commentText ?? ''}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'commentText', event.target.value)}
-                                placeholder="Enter violation observation details"
-                              />
-                            </label>
-                            <label>
-                              <span>Pre-defined corrective actions</span>
-                              <select
-                                value={activeViolationDetails?.cannedCorrectiveAction ?? ''}
-                                onChange={(event) => selectCannedCorrectiveAction(activeChecklistItem.id, event.target.value)}
-                              >
-                                <option value="">Select corrective action</option>
-                                {CANNED_CORRECTIVE_ACTIONS.map((action) => (
-                                  <option key={action} value={action}>{action}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>Corrective action</span>
-                              <textarea
-                                value={activeViolationDetails?.correctiveActionText ?? ''}
-                                onChange={(event) => updateViolationDetail(activeChecklistItem.id, 'correctiveActionText', event.target.value)}
-                                placeholder="Enter corrective action details"
-                              />
-                            </label>
+                              Edit violation details
+                            </button>
                           </div>
                         )}
                         <div className="assist-block">
@@ -1801,6 +2040,39 @@ function App() {
           </div>
         </section>
       </section>
+      {violationModalItem && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="violation-modal" role="dialog" aria-modal="true" aria-labelledby="violation-modal-title">
+            <div className="modal-header">
+              <div>
+                <span className="premium-badge alert-badge">
+                  <AlertTriangle size={15} />
+                  Out violation
+                </span>
+                <h2 id="violation-modal-title">Violation details</h2>
+                <p>
+                  {violationModalItem.number}{violationModalItem.letter ? violationModalItem.letter : ''}: {violationModalItem.short}
+                </p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close violation details" onClick={() => setViolationModalItem(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            {renderViolationCapture(violationModalItem, modalViolationDetails, modalCachedDate)}
+            {modalViolationAssist &&
+              renderViolationChat(violationModalItem, modalViolationAssist, modalViolationChat, modalViolationChatDraft)}
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setViolationModalItem(null)}>
+                Close
+              </button>
+              <button className="send-button modal-save" type="button" onClick={() => setViolationModalItem(null)}>
+                <CheckCircle2 size={18} />
+                Save details
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
