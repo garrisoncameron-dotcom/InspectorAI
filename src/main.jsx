@@ -970,7 +970,7 @@ async function buildInspectionPdf(record) {
     const writeWrapped = (text, x, y, size = 8, maxLength = 72, lineHeight = 10, limit = 6) => {
       wrapPdfText(text, maxLength).slice(0, limit).forEach((line, index) => write(line, x, y - index * lineHeight, size));
     };
-    const fillCircle = (x, y, radius = 3.4) => {
+    const fillCircle = (x, y, radius = 2.7) => {
       ctx.save();
       ctx.fillStyle = '#111';
       ctx.beginPath();
@@ -1001,23 +1001,23 @@ async function buildInspectionPdf(record) {
     };
 
     if (background === backgrounds[0]) {
-      write(record.info.establishmentName, 168, 720, 9);
-      write(record.info.address, 127, 709, 8);
-      write(record.info.cityStateZip, 55, 698, 8);
-      write(record.info.timeIn, 178, 698, 8);
-      write(record.info.timeOut, 314, 698, 8);
-      write(record.savedAt.split(',')[0], 96, 686, 8);
-      write(record.info.cfsm, 194, 686, 8);
-      write(record.info.permitNumber, 224, 651, 8);
+      write(record.info.establishmentName, 170, 718, 8);
+      write(record.info.address, 129, 707, 8);
+      write(record.info.cityStateZip, 58, 696, 7.5);
+      write(record.info.timeIn, 179, 696, 7.5);
+      write(record.info.timeOut, 314, 696, 7.5);
+      write(record.savedAt.split(',')[0], 103, 684, 7.5);
+      write(record.info.cfsm, 199, 684, 7.5);
+      write(record.info.permitNumber, 226, 649, 7.5);
       write(record.violations.length ? 'Draft' : '100', 466, 681, 16, '700');
-      if (record.info.inspectionType === 'Routine') fillCircle(172, 678);
-      if (record.info.inspectionType === 'Follow-up') fillCircle(232, 678);
-      if (record.info.inspectionType === 'Opening') fillCircle(294, 678);
+      if (record.info.inspectionType === 'Routine') fillCircle(171, 678, 3);
+      if (record.info.inspectionType === 'Follow-up') fillCircle(232, 678, 3);
+      if (record.info.inspectionType === 'Opening') fillCircle(294, 678, 3);
       record.checklist.forEach(drawStatusMark);
-      drawSignature(operatorSignature, 128, 24, 190, 18);
-      drawSignature(inspectorSignature, 116, 4, 205, 18);
-      if (record.info.followUpRequired === 'Yes') fillCircle(433, 13);
-      if (record.info.followUpRequired !== 'Yes') fillCircle(478, 13);
+      drawSignature(operatorSignature, 116, 32, 210, 22);
+      drawSignature(inspectorSignature, 108, 10, 220, 22);
+      if (record.info.followUpRequired === 'Yes') fillCircle(433, 18, 3);
+      if (record.info.followUpRequired !== 'Yes') fillCircle(478, 18, 3);
     }
 
     if (background === backgrounds[1]) {
