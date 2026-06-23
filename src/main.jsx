@@ -827,6 +827,72 @@ function dataUrlToBytes(dataUrl) {
   return bytes;
 }
 
+const FORM_STATUS_POSITIONS = {
+  '1-2A': { x: 52, y: 552, columns: 'full', side: 'left' },
+  '1-2B': { x: 52, y: 541, columns: 'full', side: 'left' },
+  '2-1A': { x: 52, y: 506, columns: 'full', side: 'left' },
+  '2-1B': { x: 52, y: 495, columns: 'full', side: 'left' },
+  '2-1C': { x: 52, y: 477, columns: 'full', side: 'left' },
+  '2-2A': { x: 52, y: 449, columns: 'full', side: 'left' },
+  '2-2B': { x: 52, y: 438, columns: 'full', side: 'left' },
+  '2-2C': { x: 52, y: 427, columns: 'full', side: 'left' },
+  '2-2D': { x: 52, y: 416, columns: 'full', side: 'left' },
+  '2-2E': { x: 52, y: 405, columns: 'full', side: 'left' },
+  '3-1A': { x: 52, y: 383, columns: 'full', side: 'left' },
+  '3-1B': { x: 52, y: 372, columns: 'full', side: 'left' },
+  '3-1C': { x: 52, y: 361, columns: 'full', side: 'left' },
+  '3-1D': { x: 52, y: 350, columns: 'full', side: 'left' },
+  '4-1A': { x: 52, y: 327, columns: 'full', side: 'left' },
+  '4-1B': { x: 52, y: 315, columns: 'full', side: 'left' },
+  '4-2A': { x: 52, y: 284, columns: 'full', side: 'left' },
+  '4-2B': { x: 52, y: 273, columns: 'full', side: 'left' },
+  '5-1A': { x: 365, y: 541, columns: 'full', side: 'right' },
+  '5-1B': { x: 365, y: 529, columns: 'full', side: 'right' },
+  '5-2': { x: 365, y: 501, columns: 'full', side: 'right' },
+  '6-1A': { x: 365, y: 462, columns: 'full', side: 'right' },
+  '6-1B': { x: 365, y: 451, columns: 'full', side: 'right' },
+  '6-1C': { x: 365, y: 440, columns: 'full', side: 'right' },
+  '6-1D': { x: 365, y: 423, columns: 'full', side: 'right' },
+  '6-2': { x: 365, y: 393, columns: 'full', side: 'right' },
+  '7-1': { x: 365, y: 374, columns: 'full', side: 'right' },
+  '8-2A': { x: 365, y: 347, columns: 'full', side: 'right' },
+  '8-2B': { x: 365, y: 330, columns: 'full', side: 'right' },
+  '9-2': { x: 365, y: 294, columns: 'full', side: 'right' },
+  '10A': { x: 69, y: 205, columns: 'outOnly' },
+  '10B': { x: 69, y: 194, columns: 'outOnly' },
+  '10C': { x: 69, y: 183, columns: 'outOnly' },
+  '10D': { x: 69, y: 162, columns: 'outOnly' },
+  '11A': { x: 69, y: 128, columns: 'outOnly' },
+  '11B': { x: 69, y: 116, columns: 'outOnly' },
+  '11C': { x: 69, y: 105, columns: 'outOnly' },
+  '11D': { x: 69, y: 94, columns: 'outOnly' },
+  '12A': { x: 69, y: 67, columns: 'outOnly' },
+  '12B': { x: 69, y: 55, columns: 'outOnly' },
+  '12C': { x: 69, y: 44, columns: 'outOnly' },
+  '12D': { x: 69, y: 33, columns: 'outOnly' },
+  '13A': { x: 69, y: 20, columns: 'outOnly' },
+  '13B': { x: 69, y: 9, columns: 'outOnly' },
+  '14A': { x: 377, y: 205, columns: 'outOnly' },
+  '14B': { x: 377, y: 194, columns: 'outOnly' },
+  '14C': { x: 377, y: 183, columns: 'outOnly' },
+  '14D': { x: 377, y: 172, columns: 'outOnly' },
+  '15A': { x: 377, y: 137, columns: 'outOnly' },
+  '15B': { x: 377, y: 116, columns: 'outOnly' },
+  '15C': { x: 377, y: 104, columns: 'outOnly' },
+  '16A': { x: 377, y: 78, columns: 'outOnly' },
+  '16B': { x: 377, y: 66, columns: 'outOnly' },
+  '16C': { x: 377, y: 55, columns: 'outOnly' },
+  '17A': { x: 377, y: 36, columns: 'outOnly' },
+  '17B': { x: 377, y: 25, columns: 'outOnly' },
+  '17C': { x: 377, y: 14, columns: 'outOnly' },
+  '17D': { x: 377, y: 3, columns: 'outOnly' },
+  '18': { x: 377, y: -8, columns: 'outOnly' }
+};
+
+function checklistFormKey(item) {
+  return `${item.number}${item.letter || ''}`;
+}
+
 function makeImageOnlyPdf(pageImages) {
   const pageWidth = 612;
   const pageHeight = 792;
@@ -903,31 +969,49 @@ async function buildInspectionPdf(record) {
     const writeWrapped = (text, x, y, size = 8, maxLength = 72, lineHeight = 10, limit = 6) => {
       wrapPdfText(text, maxLength).slice(0, limit).forEach((line, index) => write(line, x, y - index * lineHeight, size));
     };
+    const fillCircle = (x, y, radius = 3.4) => {
+      ctx.save();
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(tx(x), ty(y), radius * sx, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    const drawStatusMark = (item) => {
+      const position = FORM_STATUS_POSITIONS[checklistFormKey(item)];
+      if (!position || !item.status) return;
+      if (position.columns === 'outOnly') {
+        if (item.status === 'OUT') fillCircle(position.x, position.y);
+        return;
+      }
+      const offsets = { IN: 0, OUT: 16, NA: 32, NO: 47 };
+      const offset = offsets[item.status];
+      if (offset === undefined) return;
+      fillCircle(position.x + offset, position.y);
+    };
     const drawSignature = (image, x, y, width, height) => {
       if (!image) return;
       ctx.drawImage(image, tx(x), ty(y + height), width * sx, height * sy);
     };
 
     if (background === backgrounds[0]) {
-      write(record.info.establishmentName, 104, 650, 9);
-      write(record.info.address, 72, 632, 8);
-      write(record.info.cityStateZip, 74, 614, 8);
-      write(record.info.permitNumber, 434, 650, 8);
-      write(record.info.inspectionType, 438, 632, 8);
-      write(record.savedAt.split(',')[0], 434, 614, 8);
-      write(record.info.timeIn, 95, 596, 8);
-      write(record.info.timeOut, 208, 596, 8);
-      write(record.info.cfsm, 330, 596, 8);
-      write(record.violations.length ? 'Draft' : '100', 520, 675, 16, '700');
-      record.checklist.slice(0, 27).forEach((item, index) => {
-        if (!item.status) return;
-        const col = index < 14 ? 0 : 1;
-        const row = col === 0 ? index : index - 14;
-        write(item.status, col === 0 ? 276 : 557, 487 - row * 19.8, 7, '700');
-      });
-      drawSignature(operatorSignature, 70, 59, 132, 36);
-      drawSignature(inspectorSignature, 255, 59, 132, 36);
-      write(record.info.followUpRequired === 'Yes' ? 'YES' : 'NO', 500, 72, 8, '700');
+      write(record.info.establishmentName, 168, 720, 9);
+      write(record.info.address, 127, 709, 8);
+      write(record.info.cityStateZip, 55, 698, 8);
+      write(record.info.timeIn, 178, 698, 8);
+      write(record.info.timeOut, 314, 698, 8);
+      write(record.savedAt.split(',')[0], 96, 686, 8);
+      write(record.info.cfsm, 194, 686, 8);
+      write(record.info.permitNumber, 224, 651, 8);
+      write(record.violations.length ? 'Draft' : '100', 466, 681, 16, '700');
+      if (record.info.inspectionType === 'Routine') fillCircle(172, 678);
+      if (record.info.inspectionType === 'Follow-up') fillCircle(232, 678);
+      if (record.info.inspectionType === 'Opening') fillCircle(294, 678);
+      record.checklist.forEach(drawStatusMark);
+      drawSignature(operatorSignature, 128, 24, 190, 18);
+      drawSignature(inspectorSignature, 116, 4, 205, 18);
+      if (record.info.followUpRequired === 'Yes') fillCircle(433, 13);
+      if (record.info.followUpRequired !== 'Yes') fillCircle(478, 13);
     }
 
     if (background === backgrounds[1]) {
