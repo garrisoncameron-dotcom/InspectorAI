@@ -2512,6 +2512,12 @@ function App() {
     setWizardStep(4);
   }
 
+  function jumpToInspectionSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   return (
     <main className="shell">
       <section className="workspace">
@@ -2763,6 +2769,23 @@ function App() {
                       </select>
                       <ChevronDown size={16} />
                     </label>
+                    <label>
+                      <MapPin size={16} />
+                      <select
+                        defaultValue=""
+                        aria-label="Jump to inspection section"
+                        onChange={(event) => {
+                          if (!event.target.value) return;
+                          jumpToInspectionSection(event.target.value);
+                          event.target.value = '';
+                        }}
+                      >
+                        <option value="">Jump to</option>
+                        <option value="temperature-readings-section">Temps</option>
+                        <option value="finalize-inspection-section">Wrap up</option>
+                      </select>
+                      <ChevronDown size={16} />
+                    </label>
                     <div className="checklist-filter-tabs" aria-label="Checklist work queue filter">
                       {CHECKLIST_VIEW_FILTERS.map((filter) => (
                         <button
@@ -2774,6 +2797,12 @@ function App() {
                           {filter.label}
                         </button>
                       ))}
+                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('temperature-readings-section')}>
+                        Temps
+                      </button>
+                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('finalize-inspection-section')}>
+                        Wrap up
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2890,7 +2919,7 @@ function App() {
                   </aside>
                 </div>
 
-                <section className="temperature-panel" aria-label="Temperature readings">
+                <section className="temperature-panel" id="temperature-readings-section" aria-label="Temperature readings">
                   <div className="temperature-head">
                     <div>
                       <span className="premium-badge"><Clock3 size={15} /> Temperature readings</span>
@@ -2965,7 +2994,7 @@ function App() {
                   )}
                 </section>
 
-                <section className="finalize-panel" aria-label="Finalize inspection">
+                <section className="finalize-panel" id="finalize-inspection-section" aria-label="Finalize inspection">
                   <div>
                     <span className="premium-badge"><FileCheck2 size={15} /> Inspection closeout</span>
                     <h3>Finalize inspection</h3>

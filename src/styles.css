@@ -641,6 +641,17 @@ h1 {
   color: var(--green);
 }
 
+.checklist-filter-tabs .jump-tab {
+  border-color: #bfd2ca;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+#temperature-readings-section,
+#finalize-inspection-section {
+  scroll-margin-top: 150px;
+}
+
 .premium-badge,
 .assist-badge {
   display: inline-flex;
@@ -2830,6 +2841,11 @@ textarea {
   .checklist-filter-tabs button {
     min-width: max-content;
     padding: 0 12px;
+  }
+
+  #temperature-readings-section,
+  #finalize-inspection-section {
+    scroll-margin-top: 252px;
   }
 
   .inspection-metrics {
