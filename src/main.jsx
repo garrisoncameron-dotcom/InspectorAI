@@ -712,14 +712,14 @@ const TEMPLATE_BINDINGS = [
 ];
 
 const DEFAULT_TEMPLATE_POINTS = [
-  { id: 'tpl-est-name', page: 1, type: 'text', binding: 'establishment.name', x: 28.8, y: 9.7 },
-  { id: 'tpl-date', page: 1, type: 'text', binding: 'inspection.date', x: 17.2, y: 13.9 },
-  { id: 'tpl-6-1a-out', page: 1, type: 'status', binding: 'checklist.6-1A.OUT', x: 62.3, y: 41.5 },
-  { id: 'tpl-6-1a-cos', page: 1, type: 'cos', binding: 'checklist.6-1A.COS', x: 96.5, y: 41.5 },
-  { id: 'tpl-temp-item', page: 2, type: 'temperature', binding: 'temperatures.row.item', x: 9.0, y: 31.0 },
-  { id: 'tpl-violations', page: 2, type: 'observation', binding: 'violations.addendum', x: 14.0, y: 54.0 },
-  { id: 'tpl-operator-sig', page: 1, type: 'signature', binding: 'signature.operator', x: 19.0, y: 95.2 },
-  { id: 'tpl-inspector-sig', page: 1, type: 'signature', binding: 'signature.inspector', x: 17.0, y: 97.8 }
+  { id: 'tpl-est-name', page: 1, type: 'text', label: 'Establishment name', binding: 'establishment.name', x: 28.8, y: 9.7 },
+  { id: 'tpl-date', page: 1, type: 'text', label: 'Inspection date', binding: 'inspection.date', x: 17.2, y: 13.9 },
+  { id: 'tpl-6-1a-out', page: 1, type: 'status', label: '6-1A Out bubble', binding: 'checklist.6-1A.OUT', x: 62.3, y: 41.5 },
+  { id: 'tpl-6-1a-cos', page: 1, type: 'cos', label: '6-1A COS bubble', binding: 'checklist.6-1A.COS', x: 96.5, y: 41.5 },
+  { id: 'tpl-temp-item', page: 2, type: 'temperature', label: 'Temperature item', binding: 'temperatures.row.item', x: 9.0, y: 31.0 },
+  { id: 'tpl-violations', page: 2, type: 'observation', label: 'Violation addendum', binding: 'violations.addendum', x: 14.0, y: 54.0 },
+  { id: 'tpl-operator-sig', page: 1, type: 'signature', label: 'Operator signature', binding: 'signature.operator', x: 19.0, y: 95.2 },
+  { id: 'tpl-inspector-sig', page: 1, type: 'signature', label: 'Inspector signature', binding: 'signature.inspector', x: 17.0, y: 97.8 }
 ];
 
 const VIOLATION_STATUS_OPTIONS = ['Violation', 'Repeat', 'COS'];
@@ -1684,6 +1684,7 @@ function App() {
   const [lockedProfile, setLockedProfile] = useState(null);
   const [templatePage, setTemplatePage] = useState(1);
   const [templateFieldType, setTemplateFieldType] = useState('text');
+  const [templateLabel, setTemplateLabel] = useState('New mapped field');
   const [templateBinding, setTemplateBinding] = useState('establishment.name');
   const [templatePoints, setTemplatePoints] = useState(DEFAULT_TEMPLATE_POINTS);
   const [selectedTemplatePointId, setSelectedTemplatePointId] = useState(DEFAULT_TEMPLATE_POINTS[0]?.id ?? null);
@@ -2578,6 +2579,7 @@ function App() {
       id: crypto.randomUUID(),
       page: templatePage,
       type: templateFieldType,
+      label: templateLabel.trim() || `Mapped field ${templatePoints.length + 1}`,
       binding: templateBinding,
       x: Number(x.toFixed(2)),
       y: Number(y.toFixed(2))
@@ -2619,6 +2621,7 @@ function App() {
         id: crypto.randomUUID(),
         page: 1,
         type: 'status',
+        label: `${item} ${status} bubble`,
         binding: `checklist.${item}.${status}`,
         x: Number((18.1 + columnIndex * 2.75).toFixed(2)),
         y: Number((27.6 + rowIndex * 1.42).toFixed(2))
@@ -3365,13 +3368,27 @@ function App() {
                     </select>
                   </label>
                   <label>
-                    <span>Binding</span>
-                    <select value={templateBinding} onChange={(event) => setTemplateBinding(event.target.value)}>
-                      {TEMPLATE_BINDINGS.map((binding) => (
-                        <option key={binding}>{binding}</option>
-                      ))}
-                    </select>
+                    <span>Dot label</span>
+                    <input
+                      value={templateLabel}
+                      onChange={(event) => setTemplateLabel(event.target.value)}
+                      placeholder="Example: Facility address"
+                    />
                   </label>
+                  <label>
+                    <span>Binds to</span>
+                    <input
+                      list="template-binding-suggestions"
+                      value={templateBinding}
+                      onChange={(event) => setTemplateBinding(event.target.value)}
+                      placeholder="Type a custom field path"
+                    />
+                  </label>
+                  <datalist id="template-binding-suggestions">
+                    {TEMPLATE_BINDINGS.map((binding) => (
+                      <option key={binding} value={binding} />
+                    ))}
+                  </datalist>
                   <button type="button" onClick={addChecklistRowPattern}>
                     <ListChecks size={16} />
                     Add row pattern
@@ -3396,7 +3413,7 @@ function App() {
                             event.stopPropagation();
                             setSelectedTemplatePointId(point.id);
                           }}
-                          title={`${point.binding} (${point.x}, ${point.y})`}
+                          title={`${point.label ?? point.binding}: ${point.binding} (${point.x}, ${point.y})`}
                         >
                           {index + 1}
                         </button>
@@ -3425,6 +3442,23 @@ function App() {
                       {selectedTemplatePoint ? (
                         <>
                           <label>
+                            <span>Dot label</span>
+                            <input
+                              value={selectedTemplatePoint.label ?? selectedTemplatePoint.binding}
+                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { label: event.target.value })}
+                              placeholder="Human-readable field name"
+                            />
+                          </label>
+                          <label>
+                            <span>Binds to</span>
+                            <input
+                              list="template-binding-suggestions"
+                              value={selectedTemplatePoint.binding}
+                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { binding: event.target.value })}
+                              placeholder="Type any approved data field"
+                            />
+                          </label>
+                          <label>
                             <span>Field type</span>
                             <select
                               value={selectedTemplatePoint.type}
@@ -3432,17 +3466,6 @@ function App() {
                             >
                               {TEMPLATE_FIELD_TYPES.map((type) => (
                                 <option key={type.id} value={type.id}>{type.label}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span>Binding</span>
-                            <select
-                              value={selectedTemplatePoint.binding}
-                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { binding: event.target.value })}
-                            >
-                              {TEMPLATE_BINDINGS.map((binding) => (
-                                <option key={binding}>{binding}</option>
                               ))}
                             </select>
                           </label>
@@ -3490,8 +3513,8 @@ function App() {
                         >
                           <span className={`template-dot ${point.type}`} />
                           <div>
-                            <strong>{point.binding}</strong>
-                            <small>{point.type} · x {point.x}% · y {point.y}%</small>
+                            <strong>{point.label ?? point.binding}</strong>
+                            <small>{point.binding} · {point.type} · x {point.x}% · y {point.y}%</small>
                           </div>
                           <button
                             type="button"

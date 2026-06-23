@@ -1930,7 +1930,7 @@ h1 {
 
 .template-toolbar {
   display: grid;
-  grid-template-columns: 120px minmax(160px, 0.7fr) minmax(220px, 1fr) auto auto;
+  grid-template-columns: 120px minmax(150px, 0.65fr) minmax(180px, 1fr) minmax(220px, 1.1fr) auto auto;
   gap: 10px;
   align-items: end;
   padding: 14px;
@@ -1949,6 +1949,7 @@ h1 {
 }
 
 .template-toolbar select,
+.template-toolbar input,
 .template-toolbar button {
   min-height: 42px;
   border: 1px solid var(--line);
