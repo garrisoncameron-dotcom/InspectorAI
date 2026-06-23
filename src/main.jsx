@@ -689,6 +689,29 @@ const CANNED_CORRECTIVE_ACTIONS = [
   'Provide required records, labels, dates, or written procedures and maintain them for review.'
 ];
 
+const TEMPERATURE_STANDARDS = [
+  {
+    id: 'cold',
+    label: 'Cold holding',
+    limitLabel: '41 F max',
+    violationItemNumber: '6-1',
+    violationItemLetter: 'A',
+    isViolation: (value) => value > 41,
+    defaultCorrectiveAction:
+      'Rapidly cool, move to approved cold holding, or discard affected TCS food as required. Maintain cold holding at 41 F or below.'
+  },
+  {
+    id: 'hot',
+    label: 'Hot holding',
+    limitLabel: '135 F min',
+    violationItemNumber: '6-1',
+    violationItemLetter: 'B',
+    isViolation: (value) => value < 135,
+    defaultCorrectiveAction:
+      'Reheat, restore approved hot holding, or discard affected TCS food as required. Maintain hot holding at 135 F or above.'
+  }
+];
+
 const WIZARD_STEPS = [
   'Jurisdiction',
   'Trusted sources',
@@ -961,6 +984,9 @@ function App() {
   const [violationChats, setViolationChats] = useState({});
   const [violationChatDrafts, setViolationChatDrafts] = useState({});
   const [showReportPreview, setShowReportPreview] = useState(false);
+  const [temperatureReadings, setTemperatureReadings] = useState([]);
+  const [temperatureDraft, setTemperatureDraft] = useState({ location: '', item: '', temperature: '', standard: 'cold' });
+  const [temperatureViolationPrompt, setTemperatureViolationPrompt] = useState(null);
   const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
   const [violationModalItem, setViolationModalItem] = useState(null);
   const [checklistCategory, setChecklistCategory] = useState('All categories');
@@ -1062,6 +1088,8 @@ function App() {
       details: violationDetails[item.id] ?? {}
     }));
   }, [checklistStatuses, violationDetails]);
+  const canSaveTemperatureReading =
+    temperatureDraft.location.trim() || temperatureDraft.item.trim() || temperatureDraft.temperature.trim();
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -1280,6 +1308,96 @@ function App() {
         correctiveActionText: value || (current[itemId]?.correctiveActionText ?? '')
       }
     }));
+  }
+
+  function updateTemperatureDraft(field, value) {
+    setTemperatureDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function parseTemperature(value) {
+    const match = value.match(/-?\d+(\.\d+)?/);
+    return match ? Number(match[0]) : null;
+  }
+
+  function buildTemperatureReading() {
+    const standard = TEMPERATURE_STANDARDS.find((item) => item.id === temperatureDraft.standard) ?? TEMPERATURE_STANDARDS[0];
+    const location = temperatureDraft.location.trim();
+    const item = temperatureDraft.item.trim();
+    const temperature = temperatureDraft.temperature.trim();
+    return {
+      id: crypto.randomUUID(),
+      location,
+      item,
+      temperature,
+      standard: standard.id,
+      standardLabel: standard.label,
+      limitLabel: standard.limitLabel,
+      capturedAt: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    };
+  }
+
+  function commitTemperatureReading(reading) {
+    setTemperatureReadings((current) => [...current, reading]);
+    setTemperatureDraft({ location: '', item: '', temperature: '', standard: reading.standard });
+  }
+
+  function saveTemperatureReading() {
+    if (!canSaveTemperatureReading) return;
+    const reading = buildTemperatureReading();
+    const standard = TEMPERATURE_STANDARDS.find((item) => item.id === reading.standard) ?? TEMPERATURE_STANDARDS[0];
+    const numericTemperature = parseTemperature(reading.temperature);
+    if (numericTemperature !== null && standard.isViolation(numericTemperature)) {
+      const violationItem = CHECKLIST_ITEMS.find(
+        (item) => item.number === standard.violationItemNumber && item.letter === standard.violationItemLetter
+      );
+      const defaultComment = `${reading.standardLabel} temperature observed out of compliance: ${reading.item || 'food item'} at ${reading.temperature || '[temperature]'}${reading.location ? ` in ${reading.location}` : ''}.`;
+      setTemperatureViolationPrompt({
+        reading,
+        standard,
+        violationItem,
+        commentText: defaultComment,
+        correctiveActionText: standard.defaultCorrectiveAction
+      });
+      return;
+    }
+    commitTemperatureReading(reading);
+  }
+
+  function removeTemperatureReading(readingId) {
+    setTemperatureReadings((current) => current.filter((reading) => reading.id !== readingId));
+  }
+
+  function saveTemperatureOnly() {
+    if (!temperatureViolationPrompt) return;
+    commitTemperatureReading(temperatureViolationPrompt.reading);
+    setTemperatureViolationPrompt(null);
+  }
+
+  function saveTemperatureViolation() {
+    if (!temperatureViolationPrompt) return;
+    const { reading, violationItem, commentText, correctiveActionText } = temperatureViolationPrompt;
+    commitTemperatureReading(reading);
+    if (violationItem) {
+      setChecklistStatuses((current) => ({ ...current, [violationItem.id]: 'OUT' }));
+      setViolationDetails((current) => ({
+        ...current,
+        [violationItem.id]: {
+          repeat: false,
+          violationStatus: 'Violation',
+          correctByDate: '',
+          cannedComment: '',
+          commentText,
+          cannedCorrectiveAction: '',
+          correctiveActionText,
+          ...(current[violationItem.id] ?? {}),
+          violationStatus: current[violationItem.id]?.violationStatus ?? 'Violation',
+          commentText,
+          correctiveActionText
+        }
+      }));
+      setActiveChecklistItem(violationItem);
+    }
+    setTemperatureViolationPrompt(null);
   }
 
   function askViolationQuestion(item, evidence) {
@@ -1542,6 +1660,24 @@ function App() {
             <div><strong>Address</strong></div>
             <div><strong>City/State</strong>{activeDepartment.name}</div>
             <div><strong>Zip Code</strong></div>
+          </div>
+          <div className="official-band">Temperature observations</div>
+          <div className="official-temperature-grid">
+            <div className="official-temperature-head">Item/Location</div>
+            <div className="official-temperature-head">Temp</div>
+            <div className="official-temperature-head">Item/Location</div>
+            <div className="official-temperature-head">Temp</div>
+            <div className="official-temperature-head">Item/Location</div>
+            <div className="official-temperature-head">Temp</div>
+            {Array.from({ length: Math.max(24, Math.ceil(temperatureReadings.length / 3) * 3) }).map((_, index) => {
+              const reading = temperatureReadings[index];
+              return (
+                <React.Fragment key={`temp-preview-${index}`}>
+                  <div>{reading ? `${reading.item || 'Item'} / ${reading.location || 'Location'} (${reading.standardLabel})` : ''}</div>
+                  <div>{reading?.temperature ?? ''}</div>
+                </React.Fragment>
+              );
+            })}
           </div>
           <div className="official-band">Observations and corrective actions</div>
           {mappedViolations.length ? (
@@ -2048,6 +2184,81 @@ function App() {
                     )}
                   </aside>
                 </div>
+
+                <section className="temperature-panel" aria-label="Temperature readings">
+                  <div className="temperature-head">
+                    <div>
+                      <span className="premium-badge"><Clock3 size={15} /> Temperature readings</span>
+                      <h3>Temperature observations</h3>
+                    </div>
+                    <strong>{temperatureReadings.length}</strong>
+                  </div>
+                  <div className="temperature-entry">
+                    <label>
+                      <span>Standard</span>
+                      <select
+                        value={temperatureDraft.standard}
+                        onChange={(event) => updateTemperatureDraft('standard', event.target.value)}
+                      >
+                        {TEMPERATURE_STANDARDS.map((standard) => (
+                          <option key={standard.id} value={standard.id}>
+                            {standard.label} · {standard.limitLabel}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Location</span>
+                      <input
+                        value={temperatureDraft.location}
+                        onChange={(event) => updateTemperatureDraft('location', event.target.value)}
+                        placeholder="Prep cooler"
+                      />
+                    </label>
+                    <label>
+                      <span>Item</span>
+                      <input
+                        value={temperatureDraft.item}
+                        onChange={(event) => updateTemperatureDraft('item', event.target.value)}
+                        placeholder="Chicken salad"
+                      />
+                    </label>
+                    <label>
+                      <span>Temperature</span>
+                      <input
+                        value={temperatureDraft.temperature}
+                        onChange={(event) => updateTemperatureDraft('temperature', event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') saveTemperatureReading();
+                        }}
+                        placeholder="41 F"
+                      />
+                    </label>
+                    <button className="send-button temperature-save" type="button" onClick={saveTemperatureReading} disabled={!canSaveTemperatureReading}>
+                      <Plus size={18} />
+                      Save
+                    </button>
+                  </div>
+                  {temperatureReadings.length ? (
+                    <div className="temperature-list">
+                      {temperatureReadings.map((reading, index) => (
+                        <article key={reading.id}>
+                          <span>{index + 1}</span>
+                          <div>
+                            <strong>{reading.item || 'Item not entered'}</strong>
+                            <small>{reading.location || 'Location not entered'} · {reading.standardLabel} · {reading.limitLabel} · {reading.capturedAt}</small>
+                          </div>
+                          <b>{reading.temperature || '-'}</b>
+                          <button type="button" onClick={() => removeTemperatureReading(reading.id)} aria-label="Remove temperature reading">
+                            <X size={16} />
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted">Saved temperatures will appear in the report preview under Temperature Observations.</p>
+                  )}
+                </section>
               </section>
             )}
 
@@ -2446,6 +2657,66 @@ function App() {
               <button className="send-button modal-save" type="button" onClick={() => setViolationModalItem(null)}>
                 <CheckCircle2 size={18} />
                 Save details
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {temperatureViolationPrompt && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="violation-modal temperature-alert-modal" role="dialog" aria-modal="true" aria-labelledby="temperature-alert-title">
+            <div className="modal-header">
+              <div>
+                <span className="premium-badge alert-badge">
+                  <AlertTriangle size={15} />
+                  Temperature violation check
+                </span>
+                <h2 id="temperature-alert-title">This temperature appears out of compliance.</h2>
+                <p>
+                  {temperatureViolationPrompt.standard.label} standard is {temperatureViolationPrompt.standard.limitLabel}.
+                  {' '}Recorded: {temperatureViolationPrompt.reading.temperature || 'No temperature entered'}.
+                </p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close temperature violation check" onClick={() => setTemperatureViolationPrompt(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="temperature-alert-summary">
+              <div><strong>Location</strong><span>{temperatureViolationPrompt.reading.location || '-'}</span></div>
+              <div><strong>Item</strong><span>{temperatureViolationPrompt.reading.item || '-'}</span></div>
+              <div><strong>Checklist item</strong><span>{temperatureViolationPrompt.violationItem ? `${temperatureViolationPrompt.violationItem.number}${temperatureViolationPrompt.violationItem.letter}: ${temperatureViolationPrompt.violationItem.short}` : 'Mapping needed'}</span></div>
+            </div>
+            <div className="violation-capture">
+              <label>
+                <span>Violation comment</span>
+                <textarea
+                  value={temperatureViolationPrompt.commentText}
+                  onChange={(event) =>
+                    setTemperatureViolationPrompt((current) =>
+                      current ? { ...current, commentText: event.target.value } : current
+                    )
+                  }
+                />
+              </label>
+              <label>
+                <span>Corrective action</span>
+                <textarea
+                  value={temperatureViolationPrompt.correctiveActionText}
+                  onChange={(event) =>
+                    setTemperatureViolationPrompt((current) =>
+                      current ? { ...current, correctiveActionText: event.target.value } : current
+                    )
+                  }
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={saveTemperatureOnly}>
+                Save temp only
+              </button>
+              <button className="send-button modal-save" type="button" onClick={saveTemperatureViolation}>
+                <AlertTriangle size={18} />
+                Save as violation
               </button>
             </div>
           </section>
