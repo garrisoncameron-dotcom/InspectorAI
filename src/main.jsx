@@ -1686,6 +1686,7 @@ function App() {
   const [templateFieldType, setTemplateFieldType] = useState('text');
   const [templateBinding, setTemplateBinding] = useState('establishment.name');
   const [templatePoints, setTemplatePoints] = useState(DEFAULT_TEMPLATE_POINTS);
+  const [selectedTemplatePointId, setSelectedTemplatePointId] = useState(DEFAULT_TEMPLATE_POINTS[0]?.id ?? null);
   const [savedTemplateProfile, setSavedTemplateProfile] = useState(null);
   const recognitionRef = useRef(null);
 
@@ -1770,6 +1771,7 @@ function App() {
     temperatureDraft.location.trim() || temperatureDraft.item.trim() || temperatureDraft.temperature.trim();
   const currentTemplateImage = [gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3][templatePage - 1];
   const visibleTemplatePoints = templatePoints.filter((point) => point.page === templatePage);
+  const selectedTemplatePoint = templatePoints.find((point) => point.id === selectedTemplatePointId) ?? null;
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -2572,21 +2574,41 @@ function App() {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * 100;
     const y = ((event.clientY - rect.top) / rect.height) * 100;
-    setTemplatePoints((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        page: templatePage,
-        type: templateFieldType,
-        binding: templateBinding,
-        x: Number(x.toFixed(2)),
-        y: Number(y.toFixed(2))
-      }
-    ]);
+    const point = {
+      id: crypto.randomUUID(),
+      page: templatePage,
+      type: templateFieldType,
+      binding: templateBinding,
+      x: Number(x.toFixed(2)),
+      y: Number(y.toFixed(2))
+    };
+    setTemplatePoints((current) => [...current, point]);
+    setSelectedTemplatePointId(point.id);
   }
 
   function removeTemplatePoint(pointId) {
     setTemplatePoints((current) => current.filter((point) => point.id !== pointId));
+    if (selectedTemplatePointId === pointId) setSelectedTemplatePointId(null);
+  }
+
+  function updateTemplatePoint(pointId, updates) {
+    setTemplatePoints((current) =>
+      current.map((point) => (point.id === pointId ? { ...point, ...updates } : point))
+    );
+  }
+
+  function nudgeTemplatePoint(pointId, dx, dy) {
+    setTemplatePoints((current) =>
+      current.map((point) =>
+        point.id === pointId
+          ? {
+              ...point,
+              x: Number(Math.min(100, Math.max(0, point.x + dx)).toFixed(2)),
+              y: Number(Math.min(100, Math.max(0, point.y + dy)).toFixed(2))
+            }
+          : point
+      )
+    );
   }
 
   function addChecklistRowPattern() {
@@ -2603,6 +2625,7 @@ function App() {
       }))
     );
     setTemplatePoints((current) => [...current, ...generated]);
+    setSelectedTemplatePointId(generated[0]?.id ?? selectedTemplatePointId);
   }
 
   function saveTemplateProfile() {
@@ -3366,12 +3389,12 @@ function App() {
                       {visibleTemplatePoints.map((point, index) => (
                         <button
                           key={point.id}
-                          className={`template-pin ${point.type}`}
+                          className={`template-pin ${point.type} ${selectedTemplatePointId === point.id ? 'selected' : ''}`}
                           type="button"
                           style={{ left: `${point.x}%`, top: `${point.y}%` }}
                           onClick={(event) => {
                             event.stopPropagation();
-                            removeTemplatePoint(point.id);
+                            setSelectedTemplatePointId(point.id);
                           }}
                           title={`${point.binding} (${point.x}, ${point.y})`}
                         >
@@ -3397,15 +3420,87 @@ function App() {
                         <span>{savedTemplateProfile.name} saved for {savedTemplateProfile.department}</span>
                       </div>
                     )}
+                    <div className="template-editor">
+                      <strong>{selectedTemplatePoint ? 'Edit selected field' : 'Select a mapped field'}</strong>
+                      {selectedTemplatePoint ? (
+                        <>
+                          <label>
+                            <span>Field type</span>
+                            <select
+                              value={selectedTemplatePoint.type}
+                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { type: event.target.value })}
+                            >
+                              {TEMPLATE_FIELD_TYPES.map((type) => (
+                                <option key={type.id} value={type.id}>{type.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span>Binding</span>
+                            <select
+                              value={selectedTemplatePoint.binding}
+                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { binding: event.target.value })}
+                            >
+                              {TEMPLATE_BINDINGS.map((binding) => (
+                                <option key={binding}>{binding}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="template-coordinate-row">
+                            <label>
+                              <span>X %</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={selectedTemplatePoint.x}
+                                onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { x: Number(event.target.value) })}
+                              />
+                            </label>
+                            <label>
+                              <span>Y %</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={selectedTemplatePoint.y}
+                                onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { y: Number(event.target.value) })}
+                              />
+                            </label>
+                          </div>
+                          <div className="template-nudge-grid" aria-label="Nudge selected mapping">
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, 0, -0.25)}>Up</button>
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, -0.25, 0)}>Left</button>
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, 0.25, 0)}>Right</button>
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, 0, 0.25)}>Down</button>
+                          </div>
+                          <button className="template-delete" type="button" onClick={() => removeTemplatePoint(selectedTemplatePoint.id)}>
+                            <X size={15} />
+                            Remove selected
+                          </button>
+                        </>
+                      ) : (
+                        <p>Select a numbered bubble or a row below to edit its field type, binding, and position.</p>
+                      )}
+                    </div>
                     <div className="template-point-list">
                       {visibleTemplatePoints.length ? visibleTemplatePoints.map((point) => (
-                        <article key={point.id}>
+                        <article
+                          className={selectedTemplatePointId === point.id ? 'selected' : ''}
+                          key={point.id}
+                          onClick={() => setSelectedTemplatePointId(point.id)}
+                        >
                           <span className={`template-dot ${point.type}`} />
                           <div>
                             <strong>{point.binding}</strong>
                             <small>{point.type} · x {point.x}% · y {point.y}%</small>
                           </div>
-                          <button type="button" onClick={() => removeTemplatePoint(point.id)} aria-label="Remove mapped field">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removeTemplatePoint(point.id);
+                            }}
+                            aria-label="Remove mapped field"
+                          >
                             <X size={15} />
                           </button>
                         </article>
