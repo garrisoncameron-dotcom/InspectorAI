@@ -37,6 +37,9 @@ import {
   X
 } from 'lucide-react';
 import './styles.css';
+import gwinnettFormPage1 from './assets/gwinnett-form-page-1.jpg';
+import gwinnettFormPage2 from './assets/gwinnett-form-page-2.jpg';
+import gwinnettFormPage3 from './assets/gwinnett-form-page-3.jpg';
 
 const APPROVED_DOCS = [
   {
@@ -763,118 +766,188 @@ function wrapPdfText(value, maxLength = 88) {
   return lines.length ? lines : [''];
 }
 
-function buildInspectionPdf(record) {
+async function fetchBytes(url) {
+  let response;
+  try {
+    response = await fetch(url);
+  } catch {
+    response = await caches.match(url);
+  }
+  if (!response && 'caches' in window) {
+    response = await caches.match(url);
+  }
+  if (!response) throw new Error('Official form asset is not available offline yet.');
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function signatureBytes(dataUrl) {
+  if (!dataUrl) return null;
+  const base64 = dataUrl.split(',')[1];
+  if (!base64) return null;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function pdfTextLine(text, x, y, size = 8) {
+  return `BT /F1 ${size} Tf ${x} ${y} Td (${escapePdfText(text)}) Tj ET`;
+}
+
+function pdfWrappedLines(text, x, y, size = 8, maxLength = 72, lineHeight = 10, limit = 6) {
+  return wrapPdfText(text, maxLength)
+    .slice(0, limit)
+    .map((line, index) => pdfTextLine(line, x, y - index * lineHeight, size))
+    .join('\n');
+}
+
+async function buildInspectionPdf(record) {
   const pageWidth = 612;
   const pageHeight = 792;
-  const margin = 44;
-  const pages = [];
-  let lines = [];
-  let y = pageHeight - margin;
-
-  const pushPage = () => {
-    pages.push(lines);
-    lines = [];
-    y = pageHeight - margin;
-  };
-
-  const addText = (text, size = 10, x = margin, spacing = 15) => {
-    if (y < margin + 32) pushPage();
-    lines.push(`BT /F1 ${size} Tf ${x} ${y} Td (${escapePdfText(text)}) Tj ET`);
-    y -= spacing;
-  };
-
-  const addWrapped = (text, size = 10, x = margin, maxLength = 88) => {
-    wrapPdfText(text, maxLength).forEach((line) => addText(line, size, x, size + 4));
-  };
-
-  addText('GNR Public Health - Food Service Establishment Inspection Report', 16);
-  addText(`Inspection ID: ${record.id}`, 9);
-  addText(`Saved: ${record.savedAt}`, 9);
-  addText(`Jurisdiction: ${record.department}`, 10);
-  addText(`Establishment: ${record.info.establishmentName || '-'}`, 11);
-  addText(`Address: ${record.info.address || '-'} ${record.info.cityStateZip || ''}`, 10);
-  addText(`Permit: ${record.info.permitNumber || '-'}   CFSM: ${record.info.cfsm || '-'}`, 10);
-  addText(`Type: ${record.info.inspectionType}   Time in: ${record.info.timeIn || '-'}   Time out: ${record.info.timeOut || '-'}`, 10);
-  addText(`Follow-up required: ${record.info.followUpRequired}`, 10);
-  addText(`Score: ${record.violations.length ? 'Draft' : '100'}   OUT violations: ${record.violations.length}`, 11);
-  addText('Signatures', 13, margin, 18);
-  addText(`Operator signature captured: ${record.signatures.operator ? 'Yes' : 'No'}`, 10);
-  addText(`Inspector signature captured: ${record.signatures.inspector ? 'Yes' : 'No'}`, 10);
-
-  if (record.info.notes) {
-    addText('Final notes', 13, margin, 18);
-    addWrapped(record.info.notes);
-  }
-
-  addText('Temperature Observations', 13, margin, 18);
-  if (record.temperatureReadings.length) {
-    record.temperatureReadings.forEach((reading, index) => {
-      addWrapped(`${index + 1}. ${reading.item || 'Item'} - ${reading.temperature || '-'} - ${reading.location || 'Location'} - ${reading.standardLabel} (${reading.limitLabel})`);
-    });
-  } else {
-    addText('No temperature readings recorded.', 10);
-  }
-
-  addText('Checklist Status Summary', 13, margin, 18);
-  record.checklist.forEach((item) => {
-    addWrapped(`${item.number}${item.letter || ''}. ${item.short}: ${item.status || '-'}`, 9, margin, 98);
-  });
-
-  addText('Observations and Corrective Actions', 13, margin, 18);
-  if (record.violations.length) {
-    record.violations.forEach((violation) => {
-      addWrapped(`${violation.number}${violation.letter || ''}. ${violation.short} - ${violation.violationStatus}`);
-      addWrapped(`Observation: ${violation.comment || 'No observation entered.'}`, 9, margin + 14, 92);
-      addWrapped(`Corrective action: ${violation.correctiveAction || 'No corrective action entered.'}`, 9, margin + 14, 92);
-      if (violation.correctByDate) addText(`Correct by: ${violation.correctByDate}`, 9, margin + 14);
-    });
-  } else {
-    addText('No OUT violations recorded.', 10);
-  }
-
-  if (!pages.length || lines.length) pushPage();
-
+  const encoder = new TextEncoder();
+  const formImages = await Promise.all([gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3].map(fetchBytes));
+  const operatorSignature = signatureBytes(record.signatures.operator);
+  const inspectorSignature = signatureBytes(record.signatures.inspector);
   const objects = [];
-  const addObject = (content) => {
-    objects.push(content);
+  const addObject = (parts) => {
+    objects.push(Array.isArray(parts) ? parts : [parts]);
     return objects.length;
   };
-  const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  const pageIds = [];
-  const contentIds = [];
 
-  pages.forEach((pageLines) => {
-    const stream = pageLines.join('\n');
-    const contentId = addObject(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-    contentIds.push(contentId);
-    pageIds.push(null);
+  const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const formImageIds = formImages.map((imageBytes) =>
+    addObject([
+      `<< /Type /XObject /Subtype /Image /Width 1275 /Height 1650 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`,
+      imageBytes,
+      '\nendstream'
+    ])
+  );
+  const signatureIds = [operatorSignature, inspectorSignature].map((imageBytes) =>
+    imageBytes
+      ? addObject([
+          `<< /Type /XObject /Subtype /Image /Width 620 /Height 170 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`,
+          imageBytes,
+          '\nendstream'
+        ])
+      : null
+  );
+
+  const statusRows = record.checklist.slice(0, 27).map((item, index) => {
+    const col = index < 14 ? 0 : 1;
+    const row = col === 0 ? index : index - 14;
+    const y = 487 - row * 19.8;
+    const x = col === 0 ? 276 : 557;
+    return item.status ? pdfTextLine(item.status, x, y, 7) : '';
   });
 
-  pages.forEach((_, index) => {
-    const pageId = addObject(`<< /Type /Page /Parent ${objects.length + pages.length - index + 1} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentIds[index]} 0 R >>`);
-    pageIds[index] = pageId;
+  const temperatureRows = record.temperatureReadings.slice(0, 18).map((reading, index) => {
+    const col = index % 3;
+    const row = Math.floor(index / 3);
+    const x = 55 + col * 180;
+    const y = 548 - row * 24;
+    return [
+      pdfWrappedLines(`${reading.item || 'Item'} / ${reading.location || 'Location'}`, x, y, 6.5, 26, 8, 2),
+      pdfTextLine(reading.temperature || '-', x + 122, y - 4, 8)
+    ].join('\n');
+  });
+
+  const violationRows = record.violations.slice(0, 8).map((violation, index) => {
+    const y = 360 - index * 64;
+    return [
+      pdfTextLine(`${violation.number}${violation.letter || ''}`, 47, y, 9),
+      pdfWrappedLines(`${violation.comment}`, 86, y + 4, 7.2, 78, 9, 3),
+      pdfWrappedLines(`CA: ${violation.correctiveAction}`, 86, y - 24, 7, 78, 8, 2),
+      pdfTextLine(violation.violationStatus, 510, y, 7),
+      violation.correctByDate ? pdfTextLine(violation.correctByDate, 510, y - 12, 7) : ''
+    ].join('\n');
+  });
+
+  const pageContent = [
+    [
+      `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /FormBg1 Do Q`,
+      pdfTextLine(record.info.establishmentName || '', 104, 650, 9),
+      pdfTextLine(record.info.address || '', 72, 632, 8),
+      pdfTextLine(record.info.cityStateZip || '', 74, 614, 8),
+      pdfTextLine(record.info.permitNumber || '', 434, 650, 8),
+      pdfTextLine(record.info.inspectionType || '', 438, 632, 8),
+      pdfTextLine(record.savedAt.split(',')[0] || '', 434, 614, 8),
+      pdfTextLine(record.info.timeIn || '', 95, 596, 8),
+      pdfTextLine(record.info.timeOut || '', 208, 596, 8),
+      pdfTextLine(record.info.cfsm || '', 330, 596, 8),
+      pdfTextLine(record.violations.length ? 'Draft' : '100', 520, 675, 16),
+      statusRows.join('\n'),
+      signatureIds[0] ? 'q 132 0 0 36 70 59 cm /Sig1 Do Q' : pdfTextLine('Operator e-signature captured', 70, 76, 7),
+      signatureIds[1] ? 'q 132 0 0 36 255 59 cm /Sig2 Do Q' : pdfTextLine('Inspector e-signature captured', 255, 76, 7),
+      pdfTextLine(record.info.followUpRequired === 'Yes' ? 'YES' : 'NO', 500, 72, 8)
+    ].join('\n'),
+    [
+      `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /FormBg2 Do Q`,
+      pdfTextLine(record.info.establishmentName || '', 108, 712, 8),
+      pdfTextLine(record.info.permitNumber || '', 408, 712, 8),
+      pdfTextLine(record.savedAt.split(',')[0] || '', 500, 712, 8),
+      pdfTextLine(record.info.address || '', 90, 695, 8),
+      pdfTextLine(record.info.cityStateZip || '', 410, 695, 8),
+      temperatureRows.join('\n'),
+      violationRows.join('\n')
+    ].join('\n'),
+    [
+      `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /FormBg3 Do Q`,
+      pdfTextLine(record.info.establishmentName || '', 108, 712, 8),
+      pdfTextLine(record.info.permitNumber || '', 408, 712, 8),
+      pdfTextLine(record.savedAt.split(',')[0] || '', 500, 712, 8),
+      pdfWrappedLines(record.info.notes || 'Final report generated from InspectAid field workflow.', 64, 640, 8, 92, 10, 8),
+      record.violations.slice(8, 18).map((violation, index) =>
+        pdfWrappedLines(`${violation.number}${violation.letter || ''}: ${violation.comment} CA: ${violation.correctiveAction}`, 64, 548 - index * 42, 7.2, 95, 9, 4)
+      ).join('\n'),
+      signatureIds[0] ? 'q 132 0 0 36 72 76 cm /Sig1 Do Q' : '',
+      signatureIds[1] ? 'q 132 0 0 36 252 76 cm /Sig2 Do Q' : ''
+    ].join('\n')
+  ];
+
+  const contentIds = pageContent.map((content) =>
+    addObject(`<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`)
+  );
+  const pageIds = [];
+  const xObjectExtras = [
+    signatureIds[0] ? `/Sig1 ${signatureIds[0]} 0 R` : '',
+    signatureIds[1] ? `/Sig2 ${signatureIds[1]} 0 R` : ''
+  ].filter(Boolean).join(' ');
+
+  pageContent.forEach((_, index) => {
+    pageIds.push(addObject(''));
   });
   const kids = pageIds.map((id) => `${id} 0 R`).join(' ');
-  const pagesId = addObject(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`);
+  const pagesId = addObject(`<< /Type /Pages /Kids [${kids}] /Count ${pageIds.length} >>`);
+  objects[pagesId - 1] = [`<< /Type /Pages /Kids [${kids}] /Count ${pageIds.length} >>`];
   pageIds.forEach((pageId, index) => {
-    const contentId = contentIds[index];
-    objects[pageId - 1] = `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`;
+    objects[pageId - 1] = [
+      `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontId} 0 R >> /XObject << /FormBg${index + 1} ${formImageIds[index]} 0 R ${xObjectExtras} >> >> /Contents ${contentIds[index]} 0 R >>`
+    ];
   });
   const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
 
-  let pdf = '%PDF-1.4\n';
+  const chunks = [encoder.encode('%PDF-1.4\n')];
   const offsets = [0];
-  objects.forEach((object, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  let byteLength = chunks[0].length;
+  const pushPart = (part) => {
+    const bytes = typeof part === 'string' ? encoder.encode(part) : part;
+    chunks.push(bytes);
+    byteLength += bytes.length;
+  };
+
+  objects.forEach((parts, index) => {
+    offsets.push(byteLength);
+    pushPart(`${index + 1} 0 obj\n`);
+    parts.forEach(pushPart);
+    pushPart('\nendobj\n');
   });
-  const xrefOffset = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  const xrefOffset = byteLength;
+  pushPart(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
   offsets.slice(1).forEach((offset) => {
-    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+    pushPart(`${String(offset).padStart(10, '0')} 00000 n \n`);
   });
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  return new Blob([pdf], { type: 'application/pdf' });
+  pushPart(`trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  return new Blob(chunks, { type: 'application/pdf' });
 }
 
 function downloadBlob(blob, filename) {
@@ -970,7 +1043,7 @@ function SignaturePad({ label, value, onChange }) {
   function stopDrawing() {
     if (!drawingRef.current) return;
     drawingRef.current = false;
-    onChange(canvasRef.current.toDataURL('image/png'));
+    onChange(canvasRef.current.toDataURL('image/jpeg', 0.82));
   }
 
   function clearSignature() {
@@ -1398,6 +1471,12 @@ function App() {
       navigator.serviceWorker.register(`${import.meta.env.BASE_URL}service-worker.js`).catch(() => {});
     }
 
+    if ('caches' in window) {
+      caches.open('inspectaid-official-forms-v1')
+        .then((cache) => cache.addAll([gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3]))
+        .catch(() => {});
+    }
+
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
@@ -1749,9 +1828,10 @@ function App() {
     window.localStorage.setItem('inspectaid.inspectionRecords', JSON.stringify([record, ...stored].slice(0, 25)));
   }
 
-  function downloadFinalPdf(record = finalizedRecord) {
+  async function downloadFinalPdf(record = finalizedRecord) {
     if (!record) return;
-    downloadBlob(buildInspectionPdf(record), `${record.id}-inspection-report.pdf`);
+    const pdf = await buildInspectionPdf(record);
+    downloadBlob(pdf, `${record.id}-inspection-report.pdf`);
   }
 
   function downloadSheetRecord(record = finalizedRecord) {
@@ -1759,11 +1839,11 @@ function App() {
     downloadBlob(new Blob([buildInspectionCsv(record)], { type: 'text/csv;charset=utf-8' }), `${record.id}-sheet-record.csv`);
   }
 
-  function completeFinalInspection() {
+  async function completeFinalInspection() {
     const record = buildFinalInspectionRecord();
     saveInspectionRecord(record);
     setFinalizedRecord(record);
-    downloadFinalPdf(record);
+    await downloadFinalPdf(record);
   }
 
   function askViolationQuestion(item, evidence) {
