@@ -591,6 +591,7 @@ const FEATURES = [
   { id: 'ask', label: 'Ask', icon: MessageSquareText },
   { id: 'inspection', label: 'AI Inspection', icon: Sparkles },
   { id: 'configure', label: 'Configure', icon: SlidersHorizontal },
+  { id: 'templates', label: 'Templates', icon: PenLine },
   { id: 'photo', label: 'Photo Aid', icon: Camera },
   { id: 'workflow', label: 'Workflow', icon: ClipboardCheck },
   { id: 'knowledge', label: 'Knowledge', icon: FileCheck2 }
@@ -677,6 +678,48 @@ const CHECKLIST_VIEW_FILTERS = [
   { id: 'unmarked', label: 'Unmarked' },
   { id: 'out', label: 'Out' },
   { id: 'done', label: 'Done' }
+];
+
+const TEMPLATE_FIELD_TYPES = [
+  { id: 'text', label: 'Text field' },
+  { id: 'status', label: 'Status bubble' },
+  { id: 'cos', label: 'COS bubble' },
+  { id: 'repeat', label: 'Repeat bubble' },
+  { id: 'temperature', label: 'Temperature cell' },
+  { id: 'observation', label: 'Observation block' },
+  { id: 'signature', label: 'Signature' }
+];
+
+const TEMPLATE_BINDINGS = [
+  'establishment.name',
+  'establishment.address',
+  'inspection.date',
+  'inspection.timeIn',
+  'inspection.timeOut',
+  'inspection.permit',
+  'inspection.cfsm',
+  'inspection.score',
+  'checklist.1-2A.IN',
+  'checklist.1-2A.OUT',
+  'checklist.6-1A.OUT',
+  'checklist.6-1A.COS',
+  'checklist.6-1A.REPEAT',
+  'temperatures.row.item',
+  'temperatures.row.temp',
+  'violations.addendum',
+  'signature.operator',
+  'signature.inspector'
+];
+
+const DEFAULT_TEMPLATE_POINTS = [
+  { id: 'tpl-est-name', page: 1, type: 'text', binding: 'establishment.name', x: 28.8, y: 9.7 },
+  { id: 'tpl-date', page: 1, type: 'text', binding: 'inspection.date', x: 17.2, y: 13.9 },
+  { id: 'tpl-6-1a-out', page: 1, type: 'status', binding: 'checklist.6-1A.OUT', x: 62.3, y: 41.5 },
+  { id: 'tpl-6-1a-cos', page: 1, type: 'cos', binding: 'checklist.6-1A.COS', x: 96.5, y: 41.5 },
+  { id: 'tpl-temp-item', page: 2, type: 'temperature', binding: 'temperatures.row.item', x: 9.0, y: 31.0 },
+  { id: 'tpl-violations', page: 2, type: 'observation', binding: 'violations.addendum', x: 14.0, y: 54.0 },
+  { id: 'tpl-operator-sig', page: 1, type: 'signature', binding: 'signature.operator', x: 19.0, y: 95.2 },
+  { id: 'tpl-inspector-sig', page: 1, type: 'signature', binding: 'signature.inspector', x: 17.0, y: 97.8 }
 ];
 
 const VIOLATION_STATUS_OPTIONS = ['Violation', 'Repeat', 'COS'];
@@ -1639,6 +1682,11 @@ function App() {
   ]);
   const [draftChecklist, setDraftChecklist] = useState([]);
   const [lockedProfile, setLockedProfile] = useState(null);
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templateFieldType, setTemplateFieldType] = useState('text');
+  const [templateBinding, setTemplateBinding] = useState('establishment.name');
+  const [templatePoints, setTemplatePoints] = useState(DEFAULT_TEMPLATE_POINTS);
+  const [savedTemplateProfile, setSavedTemplateProfile] = useState(null);
   const recognitionRef = useRef(null);
 
   const jurisdictions = useMemo(() => ['All jurisdictions', ...new Set(APPROVED_DOCS.map((doc) => doc.jurisdiction))], []);
@@ -1720,6 +1768,8 @@ function App() {
   }, [checklistStatuses, violationDetails]);
   const canSaveTemperatureReading =
     temperatureDraft.location.trim() || temperatureDraft.item.trim() || temperatureDraft.temperature.trim();
+  const currentTemplateImage = [gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3][templatePage - 1];
+  const visibleTemplatePoints = templatePoints.filter((point) => point.page === templatePage);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -2518,6 +2568,54 @@ function App() {
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  function placeTemplatePoint(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    setTemplatePoints((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        page: templatePage,
+        type: templateFieldType,
+        binding: templateBinding,
+        x: Number(x.toFixed(2)),
+        y: Number(y.toFixed(2))
+      }
+    ]);
+  }
+
+  function removeTemplatePoint(pointId) {
+    setTemplatePoints((current) => current.filter((point) => point.id !== pointId));
+  }
+
+  function addChecklistRowPattern() {
+    const rowBindings = ['IN', 'OUT', 'NA', 'NO'];
+    const baseRows = ['1-2A', '1-2B', '2-1A', '2-1B', '2-1C'];
+    const generated = baseRows.flatMap((item, rowIndex) =>
+      rowBindings.map((status, columnIndex) => ({
+        id: crypto.randomUUID(),
+        page: 1,
+        type: 'status',
+        binding: `checklist.${item}.${status}`,
+        x: Number((18.1 + columnIndex * 2.75).toFixed(2)),
+        y: Number((27.6 + rowIndex * 1.42).toFixed(2))
+      }))
+    );
+    setTemplatePoints((current) => [...current, ...generated]);
+  }
+
+  function saveTemplateProfile() {
+    setSavedTemplateProfile({
+      id: 'gwinnett-food-report-template-v1',
+      name: 'Gwinnett Food Checklist v1',
+      department: activeDepartment.name,
+      pages: 3,
+      fields: templatePoints.length,
+      savedAt: new Date().toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit' })
+    });
+  }
+
   return (
     <main className="shell">
       <section className="workspace">
@@ -3209,6 +3307,118 @@ function App() {
                     )}
                   </div>
                 )}
+              </section>
+            )}
+
+            {activeFeature === 'templates' && (
+              <section className="template-mapper">
+                <div className="config-hero">
+                  <div>
+                    <span className="premium-badge"><PenLine size={15} /> Report template mapper</span>
+                    <h2>Map official forms without editing code</h2>
+                    <p>Upload or select the blank jurisdiction form, click where data belongs, save the mapping profile, and reuse it every time that department finalizes an inspection.</p>
+                  </div>
+                  <div className="profile-stamp">
+                    <FileCheck2 size={22} />
+                    <span>{savedTemplateProfile ? `${savedTemplateProfile.fields} mapped fields saved` : 'Draft template map'}</span>
+                  </div>
+                </div>
+
+                <div className="template-toolbar">
+                  <label>
+                    <span>Page</span>
+                    <select value={templatePage} onChange={(event) => setTemplatePage(Number(event.target.value))}>
+                      <option value={1}>Page 1 checklist</option>
+                      <option value={2}>Page 2 addendum</option>
+                      <option value={3}>Page 3 continuation</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Field type</span>
+                    <select value={templateFieldType} onChange={(event) => setTemplateFieldType(event.target.value)}>
+                      {TEMPLATE_FIELD_TYPES.map((type) => (
+                        <option key={type.id} value={type.id}>{type.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Binding</span>
+                    <select value={templateBinding} onChange={(event) => setTemplateBinding(event.target.value)}>
+                      {TEMPLATE_BINDINGS.map((binding) => (
+                        <option key={binding}>{binding}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" onClick={addChecklistRowPattern}>
+                    <ListChecks size={16} />
+                    Add row pattern
+                  </button>
+                  <button className="send-button" type="button" onClick={saveTemplateProfile}>
+                    <Save size={16} />
+                    Save template
+                  </button>
+                </div>
+
+                <div className="template-workbench">
+                  <div className="template-canvas-panel">
+                    <div className="template-page-shell" onClick={placeTemplatePoint} role="button" tabIndex={0}>
+                      <img src={currentTemplateImage} alt={`Official Gwinnett form page ${templatePage}`} />
+                      {visibleTemplatePoints.map((point, index) => (
+                        <button
+                          key={point.id}
+                          className={`template-pin ${point.type}`}
+                          type="button"
+                          style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeTemplatePoint(point.id);
+                          }}
+                          title={`${point.binding} (${point.x}, ${point.y})`}
+                        >
+                          {index + 1}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <aside className="template-side-panel">
+                    <div className="panel-title">
+                      <FileSearch size={18} />
+                      Mapping profile
+                    </div>
+                    <div className="template-summary">
+                      <div><strong>{templatePoints.length}</strong><span>mapped fields</span></div>
+                      <div><strong>{visibleTemplatePoints.length}</strong><span>on page {templatePage}</span></div>
+                      <div><strong>{savedTemplateProfile ? 'Saved' : 'Draft'}</strong><span>profile status</span></div>
+                    </div>
+                    {savedTemplateProfile && (
+                      <div className="template-saved">
+                        <CheckCircle2 size={18} />
+                        <span>{savedTemplateProfile.name} saved for {savedTemplateProfile.department}</span>
+                      </div>
+                    )}
+                    <div className="template-point-list">
+                      {visibleTemplatePoints.length ? visibleTemplatePoints.map((point) => (
+                        <article key={point.id}>
+                          <span className={`template-dot ${point.type}`} />
+                          <div>
+                            <strong>{point.binding}</strong>
+                            <small>{point.type} · x {point.x}% · y {point.y}%</small>
+                          </div>
+                          <button type="button" onClick={() => removeTemplatePoint(point.id)} aria-label="Remove mapped field">
+                            <X size={15} />
+                          </button>
+                        </article>
+                      )) : (
+                        <p className="muted">Click the form preview to add the selected field mapping.</p>
+                      )}
+                    </div>
+                    <div className="template-note">
+                      <strong>Production shape</strong>
+                      <p>Store this mapping as a jurisdiction report template. Final report generation reads the saved coordinates instead of hardcoded form positions.</p>
+                    </div>
+                  </aside>
+                </div>
               </section>
             )}
 

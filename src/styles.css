@@ -1914,6 +1914,216 @@ h1 {
   font-size: 1.22rem;
 }
 
+.template-mapper {
+  display: grid;
+  gap: 16px;
+}
+
+.template-toolbar,
+.template-workbench,
+.template-side-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.88);
+  box-shadow: var(--shadow);
+}
+
+.template-toolbar {
+  display: grid;
+  grid-template-columns: 120px minmax(160px, 0.7fr) minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+}
+
+.template-toolbar label {
+  display: grid;
+  gap: 6px;
+}
+
+.template-toolbar span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.template-toolbar select,
+.template-toolbar button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 0 10px;
+  font-weight: 800;
+}
+
+.template-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.template-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 0;
+  overflow: hidden;
+}
+
+.template-canvas-panel {
+  min-width: 0;
+  max-height: 820px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.template-page-shell {
+  position: relative;
+  width: min(760px, 100%);
+  margin: 0 auto;
+  border: 1px solid #8c8982;
+  background: white;
+  cursor: crosshair;
+}
+
+.template-page-shell img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.template-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 2px solid white;
+  border-radius: 999px;
+  background: var(--blue);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 900;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.22);
+}
+
+.template-pin.status,
+.template-pin.cos,
+.template-pin.repeat {
+  background: var(--green);
+}
+
+.template-pin.observation {
+  background: var(--amber);
+}
+
+.template-pin.signature {
+  background: var(--red);
+}
+
+.template-side-panel {
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px;
+  overflow: auto;
+}
+
+.template-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.template-summary div,
+.template-note,
+.template-saved {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.template-summary strong,
+.template-summary span {
+  display: block;
+}
+
+.template-summary strong {
+  font-size: 1.08rem;
+}
+
+.template-summary span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.template-saved {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  color: var(--green);
+  font-weight: 800;
+}
+
+.template-point-list {
+  display: grid;
+  gap: 8px;
+}
+
+.template-point-list article {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) 32px;
+  gap: 9px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 9px;
+}
+
+.template-point-list strong,
+.template-point-list small {
+  display: block;
+}
+
+.template-point-list small {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.template-point-list button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--muted);
+}
+
+.template-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--blue);
+}
+
+.template-note {
+  margin-top: 12px;
+}
+
+.template-note p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.42;
+}
+
 .split-copy {
   display: flex;
   align-items: end;
@@ -2651,7 +2861,7 @@ textarea {
 
   .feature-menu {
     position: static;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .feature-menu button {
@@ -2680,6 +2890,8 @@ textarea {
   .registry-row,
   .temperature-entry,
   .finalize-panel,
+  .template-toolbar,
+  .template-workbench,
   .config-hero,
   .department-grid,
   .source-picker,
@@ -2877,6 +3089,20 @@ textarea {
 
   .temperature-panel {
     padding: 12px;
+  }
+
+  .template-toolbar {
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .template-side-panel {
+    border-width: 1px 0 0;
+  }
+
+  .template-canvas-panel {
+    max-height: none;
+    padding: 10px;
   }
 
   .finalize-panel {
