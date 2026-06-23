@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   Clock3,
   CloudOff,
+  FileDown,
   FileCheck2,
   FileSearch,
   Filter,
@@ -23,9 +24,11 @@ import {
   Mic,
   Moon,
   Plus,
+  PenLine,
   Radio,
   Search,
   Send,
+  Save,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -726,6 +729,278 @@ const TEMPERATURE_STANDARDS = [
   }
 ];
 
+const DEFAULT_FINALIZE_INFO = {
+  establishmentName: 'Demo Food Service',
+  address: '455 Grayson Hwy',
+  cityStateZip: 'Lawrenceville, GA 30046',
+  permitNumber: 'FS-2026-001',
+  cfsm: '',
+  inspectionType: 'Routine',
+  timeIn: '09:15',
+  timeOut: '',
+  followUpRequired: 'No',
+  notes: ''
+};
+
+function escapePdfText(value) {
+  return String(value ?? '').replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+}
+
+function wrapPdfText(value, maxLength = 88) {
+  const words = String(value ?? '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  words.forEach((word) => {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > maxLength) {
+      if (line) lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  });
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}
+
+function buildInspectionPdf(record) {
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const margin = 44;
+  const pages = [];
+  let lines = [];
+  let y = pageHeight - margin;
+
+  const pushPage = () => {
+    pages.push(lines);
+    lines = [];
+    y = pageHeight - margin;
+  };
+
+  const addText = (text, size = 10, x = margin, spacing = 15) => {
+    if (y < margin + 32) pushPage();
+    lines.push(`BT /F1 ${size} Tf ${x} ${y} Td (${escapePdfText(text)}) Tj ET`);
+    y -= spacing;
+  };
+
+  const addWrapped = (text, size = 10, x = margin, maxLength = 88) => {
+    wrapPdfText(text, maxLength).forEach((line) => addText(line, size, x, size + 4));
+  };
+
+  addText('GNR Public Health - Food Service Establishment Inspection Report', 16);
+  addText(`Inspection ID: ${record.id}`, 9);
+  addText(`Saved: ${record.savedAt}`, 9);
+  addText(`Jurisdiction: ${record.department}`, 10);
+  addText(`Establishment: ${record.info.establishmentName || '-'}`, 11);
+  addText(`Address: ${record.info.address || '-'} ${record.info.cityStateZip || ''}`, 10);
+  addText(`Permit: ${record.info.permitNumber || '-'}   CFSM: ${record.info.cfsm || '-'}`, 10);
+  addText(`Type: ${record.info.inspectionType}   Time in: ${record.info.timeIn || '-'}   Time out: ${record.info.timeOut || '-'}`, 10);
+  addText(`Follow-up required: ${record.info.followUpRequired}`, 10);
+  addText(`Score: ${record.violations.length ? 'Draft' : '100'}   OUT violations: ${record.violations.length}`, 11);
+  addText('Signatures', 13, margin, 18);
+  addText(`Operator signature captured: ${record.signatures.operator ? 'Yes' : 'No'}`, 10);
+  addText(`Inspector signature captured: ${record.signatures.inspector ? 'Yes' : 'No'}`, 10);
+
+  if (record.info.notes) {
+    addText('Final notes', 13, margin, 18);
+    addWrapped(record.info.notes);
+  }
+
+  addText('Temperature Observations', 13, margin, 18);
+  if (record.temperatureReadings.length) {
+    record.temperatureReadings.forEach((reading, index) => {
+      addWrapped(`${index + 1}. ${reading.item || 'Item'} - ${reading.temperature || '-'} - ${reading.location || 'Location'} - ${reading.standardLabel} (${reading.limitLabel})`);
+    });
+  } else {
+    addText('No temperature readings recorded.', 10);
+  }
+
+  addText('Checklist Status Summary', 13, margin, 18);
+  record.checklist.forEach((item) => {
+    addWrapped(`${item.number}${item.letter || ''}. ${item.short}: ${item.status || '-'}`, 9, margin, 98);
+  });
+
+  addText('Observations and Corrective Actions', 13, margin, 18);
+  if (record.violations.length) {
+    record.violations.forEach((violation) => {
+      addWrapped(`${violation.number}${violation.letter || ''}. ${violation.short} - ${violation.violationStatus}`);
+      addWrapped(`Observation: ${violation.comment || 'No observation entered.'}`, 9, margin + 14, 92);
+      addWrapped(`Corrective action: ${violation.correctiveAction || 'No corrective action entered.'}`, 9, margin + 14, 92);
+      if (violation.correctByDate) addText(`Correct by: ${violation.correctByDate}`, 9, margin + 14);
+    });
+  } else {
+    addText('No OUT violations recorded.', 10);
+  }
+
+  if (!pages.length || lines.length) pushPage();
+
+  const objects = [];
+  const addObject = (content) => {
+    objects.push(content);
+    return objects.length;
+  };
+  const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const pageIds = [];
+  const contentIds = [];
+
+  pages.forEach((pageLines) => {
+    const stream = pageLines.join('\n');
+    const contentId = addObject(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    contentIds.push(contentId);
+    pageIds.push(null);
+  });
+
+  pages.forEach((_, index) => {
+    const pageId = addObject(`<< /Type /Page /Parent ${objects.length + pages.length - index + 1} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentIds[index]} 0 R >>`);
+    pageIds[index] = pageId;
+  });
+  const kids = pageIds.map((id) => `${id} 0 R`).join(' ');
+  const pagesId = addObject(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`);
+  pageIds.forEach((pageId, index) => {
+    const contentId = contentIds[index];
+    objects[pageId - 1] = `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`;
+  });
+  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function buildInspectionCsv(record) {
+  const rows = [
+    ['inspection_id', record.id],
+    ['saved_at', record.savedAt],
+    ['department', record.department],
+    ['establishment_name', record.info.establishmentName],
+    ['address', record.info.address],
+    ['city_state_zip', record.info.cityStateZip],
+    ['permit_number', record.info.permitNumber],
+    ['inspection_type', record.info.inspectionType],
+    ['time_in', record.info.timeIn],
+    ['time_out', record.info.timeOut],
+    ['follow_up_required', record.info.followUpRequired],
+    ['out_violation_count', record.violations.length],
+    [],
+    ['violations'],
+    ['item', 'status', 'correct_by', 'observation', 'corrective_action'],
+    ...record.violations.map((violation) => [
+      `${violation.number}${violation.letter || ''} ${violation.short}`,
+      violation.violationStatus,
+      violation.correctByDate,
+      violation.comment,
+      violation.correctiveAction
+    ]),
+    [],
+    ['temperature_readings'],
+    ['location', 'item', 'temperature', 'standard'],
+    ...record.temperatureReadings.map((reading) => [
+      reading.location,
+      reading.item,
+      reading.temperature,
+      `${reading.standardLabel} ${reading.limitLabel}`
+    ])
+  ];
+  return rows.map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
+}
+
+function SignaturePad({ label, value, onChange }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || value) return;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }, [value]);
+
+  function pointForEvent(event) {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvasRef.current.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvasRef.current.height
+    };
+  }
+
+  function startDrawing(event) {
+    event.preventDefault();
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    const point = pointForEvent(event);
+    drawingRef.current = true;
+    context.lineWidth = 3;
+    context.lineCap = 'round';
+    context.strokeStyle = '#1f6f5b';
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+  }
+
+  function draw(event) {
+    if (!drawingRef.current) return;
+    event.preventDefault();
+    const context = canvasRef.current.getContext('2d');
+    const point = pointForEvent(event);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+  }
+
+  function stopDrawing() {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    onChange(canvasRef.current.toDataURL('image/png'));
+  }
+
+  function clearSignature() {
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    onChange('');
+  }
+
+  return (
+    <div className="signature-pad">
+      <div>
+        <strong>{label}</strong>
+        <button type="button" onClick={clearSignature}>Clear</button>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width="620"
+        height="170"
+        onPointerDown={startDrawing}
+        onPointerMove={draw}
+        onPointerUp={stopDrawing}
+        onPointerLeave={stopDrawing}
+      />
+      <small>{value ? 'Signature captured' : 'Sign in the box'}</small>
+    </div>
+  );
+}
+
 const WIZARD_STEPS = [
   'Jurisdiction',
   'Trusted sources',
@@ -1001,6 +1276,12 @@ function App() {
   const [temperatureReadings, setTemperatureReadings] = useState([]);
   const [temperatureDraft, setTemperatureDraft] = useState({ location: '', item: '', temperature: '', standard: 'cold' });
   const [temperatureViolationPrompt, setTemperatureViolationPrompt] = useState(null);
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [finalizeStage, setFinalizeStage] = useState('info');
+  const [finalizeInfo, setFinalizeInfo] = useState(DEFAULT_FINALIZE_INFO);
+  const [operatorSignature, setOperatorSignature] = useState('');
+  const [inspectorSignature, setInspectorSignature] = useState('');
+  const [finalizedRecord, setFinalizedRecord] = useState(null);
   const [historyModalItem, setHistoryModalItem] = useState(null);
   const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
   const [violationModalItem, setViolationModalItem] = useState(null);
@@ -1130,7 +1411,6 @@ function App() {
       if (!form) return;
       const selects = form.querySelectorAll('select');
       const textareas = form.querySelectorAll('textarea');
-      const checkbox = form.querySelector('input[type="checkbox"]');
       const date = form.querySelector('input[type="date"]');
       window.__violationDateCache = {
         ...(window.__violationDateCache ?? {}),
@@ -1139,7 +1419,6 @@ function App() {
       setViolationDetails((current) => ({
         ...current,
         [activeChecklistItem.id]: {
-          repeat: checkbox?.checked ?? false,
           violationStatus: selects[0]?.value ?? 'Violation',
           correctByDate: date?.value ?? '',
           cannedComment: selects[1]?.value ?? '',
@@ -1414,6 +1693,79 @@ function App() {
     setTemperatureViolationPrompt(null);
   }
 
+  function updateFinalizeInfo(field, value) {
+    setFinalizeInfo((current) => ({ ...current, [field]: value }));
+  }
+
+  function buildFinalInspectionRecord() {
+    const savedAt = new Date().toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+    const violations = reportViolations.map(({ item, details }) => ({
+      id: item.id,
+      number: item.number,
+      letter: item.letter,
+      category: item.category,
+      short: item.short,
+      violationStatus: details.violationStatus || 'Violation',
+      correctByDate: details.correctByDate || '',
+      comment:
+        details.commentText ||
+        `Observed ${item.short.toLowerCase()} out of compliance. Corrective action must be documented before final report approval.`,
+      correctiveAction:
+        details.correctiveActionText || 'Correct violation and maintain active managerial control to prevent recurrence.'
+    }));
+
+    return {
+      id: `INS-${Date.now()}`,
+      savedAt,
+      department: activeDepartment.name,
+      jurisdiction,
+      info: finalizeInfo,
+      signatures: {
+        operator: operatorSignature,
+        inspector: inspectorSignature
+      },
+      checklist: CHECKLIST_ITEMS.map((item) => ({
+        id: item.id,
+        number: item.number,
+        letter: item.letter,
+        short: item.short,
+        category: item.category,
+        status: checklistStatuses[item.id] || ''
+      })),
+      counts: checklistCounts,
+      violations,
+      temperatureReadings
+    };
+  }
+
+  function saveInspectionRecord(record) {
+    const stored = JSON.parse(window.localStorage.getItem('inspectaid.inspectionRecords') || '[]');
+    window.localStorage.setItem('inspectaid.inspectionRecords', JSON.stringify([record, ...stored].slice(0, 25)));
+  }
+
+  function downloadFinalPdf(record = finalizedRecord) {
+    if (!record) return;
+    downloadBlob(buildInspectionPdf(record), `${record.id}-inspection-report.pdf`);
+  }
+
+  function downloadSheetRecord(record = finalizedRecord) {
+    if (!record) return;
+    downloadBlob(new Blob([buildInspectionCsv(record)], { type: 'text/csv;charset=utf-8' }), `${record.id}-sheet-record.csv`);
+  }
+
+  function completeFinalInspection() {
+    const record = buildFinalInspectionRecord();
+    saveInspectionRecord(record);
+    setFinalizedRecord(record);
+    downloadFinalPdf(record);
+  }
+
   function askViolationQuestion(item, evidence) {
     const question = (violationChatDrafts[item.id] ?? '').trim();
     if (!question) return;
@@ -1603,6 +1955,8 @@ function App() {
       day: '2-digit',
       year: 'numeric'
     });
+    const info = finalizedRecord?.info ?? finalizeInfo;
+    const signatures = finalizedRecord?.signatures ?? { operator: operatorSignature, inspector: inspectorSignature };
     const mappedViolations = reportViolations.map(({ item, details }) => {
       const statusLabel = details.violationStatus || 'Violation';
       const comment =
@@ -1633,14 +1987,14 @@ function App() {
             </div>
           </div>
           <div className="official-field-grid">
-            <div><strong>Establishment Name:</strong><span /></div>
-            <div><strong>Address:</strong><span /></div>
-            <div><strong>City:</strong><span /></div>
+            <div><strong>Establishment Name:</strong><span>{info.establishmentName}</span></div>
+            <div><strong>Address:</strong><span>{info.address}</span></div>
+            <div><strong>City:</strong><span>{info.cityStateZip}</span></div>
             <div><strong>Inspection Date:</strong><span>{previewDate}</span></div>
-            <div><strong>Time In:</strong><span /></div>
-            <div><strong>Time Out:</strong><span /></div>
-            <div><strong>CFSM:</strong><span /></div>
-            <div><strong>Permit#:</strong><span /></div>
+            <div><strong>Time In:</strong><span>{info.timeIn}</span></div>
+            <div><strong>Time Out:</strong><span>{info.timeOut}</span></div>
+            <div><strong>CFSM:</strong><span>{info.cfsm}</span></div>
+            <div><strong>Permit#:</strong><span>{info.permitNumber}</span></div>
           </div>
           <div className="official-band">Foodborne illness risk factors and public health interventions</div>
           <div className="official-status-summary">
@@ -1662,9 +2016,9 @@ function App() {
             })}
           </div>
           <div className="official-footer">
-            <span>Person in Charge (Signature)</span>
-            <span>Inspector (Signature)</span>
-            <span>Follow-up: YES O&nbsp;&nbsp;&nbsp;NO O</span>
+            <span>{signatures.operator ? <img src={signatures.operator} alt="Operator signature" /> : 'Person in Charge (Signature)'}</span>
+            <span>{signatures.inspector ? <img src={signatures.inspector} alt="Inspector signature" /> : 'Inspector (Signature)'}</span>
+            <span>Follow-up: {info.followUpRequired === 'Yes' ? 'YES' : 'NO'}</span>
           </div>
         </section>
 
@@ -1672,12 +2026,12 @@ function App() {
           <div className="official-page-count">Page 2 of 3</div>
           <h3>Food Service Establishment Inspection Report Addendum</h3>
           <div className="official-addendum-fields">
-            <div><strong>Establishment</strong></div>
-            <div><strong>Permit #</strong></div>
+            <div><strong>Establishment</strong>{info.establishmentName}</div>
+            <div><strong>Permit #</strong>{info.permitNumber}</div>
             <div><strong>Date</strong>{previewDate}</div>
-            <div><strong>Address</strong></div>
+            <div><strong>Address</strong>{info.address}</div>
             <div><strong>City/State</strong>{activeDepartment.name}</div>
-            <div><strong>Zip Code</strong></div>
+            <div><strong>Zip Code</strong>{info.cityStateZip}</div>
           </div>
           <div className="official-band">Temperature observations</div>
           <div className="official-temperature-grid">
@@ -1723,8 +2077,8 @@ function App() {
             </div>
           )}
           <div className="official-footer">
-            <span>Person in Charge (Signature)</span>
-            <span>Inspector (Signature)</span>
+            <span>{signatures.operator ? <img src={signatures.operator} alt="Operator signature" /> : 'Person in Charge (Signature)'}</span>
+            <span>{signatures.inspector ? <img src={signatures.inspector} alt="Inspector signature" /> : 'Inspector (Signature)'}</span>
             <span>Date</span>
           </div>
         </section>
@@ -2276,6 +2630,33 @@ function App() {
                     <p className="muted">Saved temperatures will appear in the report preview under Temperature Observations.</p>
                   )}
                 </section>
+
+                <section className="finalize-panel" aria-label="Finalize inspection">
+                  <div>
+                    <span className="premium-badge"><FileCheck2 size={15} /> Inspection closeout</span>
+                    <h3>Finalize inspection</h3>
+                    <p>
+                      Collect final report details, capture operator and inspector signatures, save the inspection record, and generate the filled report PDF.
+                    </p>
+                  </div>
+                  <div className="finalize-summary">
+                    <span>{reportViolations.length} OUT</span>
+                    <span>{temperatureReadings.length} temps</span>
+                    <span>{finalizedRecord ? 'Finalized' : 'Draft'}</span>
+                  </div>
+                  <button
+                    className="send-button finalize-button"
+                    type="button"
+                    onClick={() => {
+                      captureActiveViolationForm();
+                      setFinalizeStage('info');
+                      setShowFinalizeModal(true);
+                    }}
+                  >
+                    <FileCheck2 size={18} />
+                    Finalize inspection
+                  </button>
+                </section>
               </section>
             )}
 
@@ -2792,6 +3173,140 @@ function App() {
                 <AlertTriangle size={18} />
                 Save as violation
               </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {showFinalizeModal && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="violation-modal finalize-modal" role="dialog" aria-modal="true" aria-labelledby="finalize-modal-title">
+            <div className="modal-header">
+              <div>
+                <span className="premium-badge">
+                  <FileCheck2 size={15} />
+                  Final inspection package
+                </span>
+                <h2 id="finalize-modal-title">{finalizeStage === 'info' ? 'Additional report information' : 'Capture signatures'}</h2>
+                <p>
+                  {finalizeStage === 'info'
+                    ? 'Confirm the details needed before the report can be completed.'
+                    : 'Signatures lock the draft, save the inspection record, and generate the downloadable PDF.'}
+                </p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close finalize inspection" onClick={() => setShowFinalizeModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {finalizeStage === 'info' ? (
+              <div className="finalize-form">
+                <label>
+                  <span>Establishment name</span>
+                  <input value={finalizeInfo.establishmentName} onChange={(event) => updateFinalizeInfo('establishmentName', event.target.value)} />
+                </label>
+                <label>
+                  <span>Permit number</span>
+                  <input value={finalizeInfo.permitNumber} onChange={(event) => updateFinalizeInfo('permitNumber', event.target.value)} />
+                </label>
+                <label className="wide">
+                  <span>Address</span>
+                  <input value={finalizeInfo.address} onChange={(event) => updateFinalizeInfo('address', event.target.value)} />
+                </label>
+                <label>
+                  <span>City / State / ZIP</span>
+                  <input value={finalizeInfo.cityStateZip} onChange={(event) => updateFinalizeInfo('cityStateZip', event.target.value)} />
+                </label>
+                <label>
+                  <span>CFSM</span>
+                  <input value={finalizeInfo.cfsm} onChange={(event) => updateFinalizeInfo('cfsm', event.target.value)} placeholder="Certified food safety manager" />
+                </label>
+                <label>
+                  <span>Inspection type</span>
+                  <select value={finalizeInfo.inspectionType} onChange={(event) => updateFinalizeInfo('inspectionType', event.target.value)}>
+                    <option>Routine</option>
+                    <option>Follow-up</option>
+                    <option>Complaint</option>
+                    <option>Opening</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Time in</span>
+                  <input type="time" value={finalizeInfo.timeIn} onChange={(event) => updateFinalizeInfo('timeIn', event.target.value)} />
+                </label>
+                <label>
+                  <span>Time out</span>
+                  <input type="time" value={finalizeInfo.timeOut} onChange={(event) => updateFinalizeInfo('timeOut', event.target.value)} />
+                </label>
+                <label>
+                  <span>Follow-up required</span>
+                  <select value={finalizeInfo.followUpRequired} onChange={(event) => updateFinalizeInfo('followUpRequired', event.target.value)}>
+                    <option>No</option>
+                    <option>Yes</option>
+                  </select>
+                </label>
+                <label className="wide">
+                  <span>Final notes</span>
+                  <textarea
+                    value={finalizeInfo.notes}
+                    onChange={(event) => updateFinalizeInfo('notes', event.target.value)}
+                    placeholder="Optional closeout notes"
+                  />
+                </label>
+                <div className="finalize-readiness wide">
+                  <div><strong>{CHECKLIST_ITEMS.length - checklistCounts.blank}</strong><span>Checklist items marked</span></div>
+                  <div><strong>{reportViolations.length}</strong><span>OUT violations</span></div>
+                  <div><strong>{temperatureReadings.length}</strong><span>Temperature readings</span></div>
+                </div>
+              </div>
+            ) : (
+              <div className="signature-stage">
+                <SignaturePad label="Operator / person in charge signature" value={operatorSignature} onChange={setOperatorSignature} />
+                <SignaturePad label="Inspector signature" value={inspectorSignature} onChange={setInspectorSignature} />
+                {finalizedRecord && (
+                  <div className="finalized-confirmation">
+                    <CheckCircle2 size={20} />
+                    <div>
+                      <strong>Inspection finalized</strong>
+                      <span>{finalizedRecord.id} was saved locally and the report PDF was generated.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              {finalizeStage === 'signature' && (
+                <button className="ghost-button" type="button" onClick={() => setFinalizeStage('info')}>
+                  Back
+                </button>
+              )}
+              <button className="ghost-button" type="button" onClick={() => setShowFinalizeModal(false)}>
+                Close
+              </button>
+              {finalizeStage === 'info' ? (
+                <button className="send-button modal-save" type="button" onClick={() => setFinalizeStage('signature')}>
+                  <PenLine size={18} />
+                  Complete report
+                </button>
+              ) : (
+                <>
+                  {finalizedRecord && (
+                    <button className="ghost-button" type="button" onClick={() => downloadSheetRecord()}>
+                      <Save size={18} />
+                      Sheet record
+                    </button>
+                  )}
+                  <button
+                    className="send-button modal-save"
+                    type="button"
+                    onClick={finalizedRecord ? () => downloadFinalPdf() : completeFinalInspection}
+                    disabled={!operatorSignature || !inspectorSignature}
+                  >
+                    <FileDown size={18} />
+                    {finalizedRecord ? 'Download PDF' : 'Finalize and download PDF'}
+                  </button>
+                </>
+              )}
             </div>
           </section>
         </div>
