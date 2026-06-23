@@ -828,36 +828,36 @@ function dataUrlToBytes(dataUrl) {
 }
 
 const FORM_STATUS_POSITIONS = {
-  '1-2A': { x: 52, y: 552, columns: 'full', side: 'left' },
-  '1-2B': { x: 52, y: 541, columns: 'full', side: 'left' },
-  '2-1A': { x: 52, y: 506, columns: 'full', side: 'left' },
-  '2-1B': { x: 52, y: 495, columns: 'full', side: 'left' },
-  '2-1C': { x: 52, y: 477, columns: 'full', side: 'left' },
-  '2-2A': { x: 52, y: 449, columns: 'full', side: 'left' },
-  '2-2B': { x: 52, y: 438, columns: 'full', side: 'left' },
-  '2-2C': { x: 52, y: 427, columns: 'full', side: 'left' },
-  '2-2D': { x: 52, y: 416, columns: 'full', side: 'left' },
-  '2-2E': { x: 52, y: 405, columns: 'full', side: 'left' },
-  '3-1A': { x: 52, y: 383, columns: 'full', side: 'left' },
-  '3-1B': { x: 52, y: 372, columns: 'full', side: 'left' },
-  '3-1C': { x: 52, y: 361, columns: 'full', side: 'left' },
-  '3-1D': { x: 52, y: 350, columns: 'full', side: 'left' },
-  '4-1A': { x: 52, y: 327, columns: 'full', side: 'left' },
-  '4-1B': { x: 52, y: 315, columns: 'full', side: 'left' },
-  '4-2A': { x: 52, y: 284, columns: 'full', side: 'left' },
-  '4-2B': { x: 52, y: 273, columns: 'full', side: 'left' },
-  '5-1A': { x: 365, y: 541, columns: 'full', side: 'right' },
-  '5-1B': { x: 365, y: 529, columns: 'full', side: 'right' },
-  '5-2': { x: 365, y: 501, columns: 'full', side: 'right' },
-  '6-1A': { x: 365, y: 462, columns: 'full', side: 'right' },
-  '6-1B': { x: 365, y: 451, columns: 'full', side: 'right' },
-  '6-1C': { x: 365, y: 440, columns: 'full', side: 'right' },
-  '6-1D': { x: 365, y: 423, columns: 'full', side: 'right' },
-  '6-2': { x: 365, y: 393, columns: 'full', side: 'right' },
-  '7-1': { x: 365, y: 374, columns: 'full', side: 'right' },
-  '8-2A': { x: 365, y: 347, columns: 'full', side: 'right' },
-  '8-2B': { x: 365, y: 330, columns: 'full', side: 'right' },
-  '9-2': { x: 365, y: 294, columns: 'full', side: 'right' },
+  '1-2A': { x: 52, y: 554, columns: 'full', side: 'left' },
+  '1-2B': { x: 52, y: 543, columns: 'full', side: 'left' },
+  '2-1A': { x: 52, y: 508, columns: 'full', side: 'left' },
+  '2-1B': { x: 52, y: 497, columns: 'full', side: 'left' },
+  '2-1C': { x: 52, y: 479, columns: 'full', side: 'left' },
+  '2-2A': { x: 52, y: 451, columns: 'full', side: 'left' },
+  '2-2B': { x: 52, y: 440, columns: 'full', side: 'left' },
+  '2-2C': { x: 52, y: 429, columns: 'full', side: 'left' },
+  '2-2D': { x: 52, y: 418, columns: 'full', side: 'left' },
+  '2-2E': { x: 52, y: 407, columns: 'full', side: 'left' },
+  '3-1A': { x: 52, y: 385, columns: 'full', side: 'left' },
+  '3-1B': { x: 52, y: 374, columns: 'full', side: 'left' },
+  '3-1C': { x: 52, y: 363, columns: 'full', side: 'left' },
+  '3-1D': { x: 52, y: 352, columns: 'full', side: 'left' },
+  '4-1A': { x: 52, y: 329, columns: 'full', side: 'left' },
+  '4-1B': { x: 52, y: 317, columns: 'full', side: 'left' },
+  '4-2A': { x: 52, y: 286, columns: 'full', side: 'left' },
+  '4-2B': { x: 52, y: 275, columns: 'full', side: 'left' },
+  '5-1A': { x: 365, y: 543, columns: 'full', side: 'right' },
+  '5-1B': { x: 365, y: 531, columns: 'full', side: 'right' },
+  '5-2': { x: 365, y: 503, columns: 'full', side: 'right' },
+  '6-1A': { x: 365, y: 464, columns: 'full', side: 'right' },
+  '6-1B': { x: 365, y: 453, columns: 'full', side: 'right' },
+  '6-1C': { x: 365, y: 442, columns: 'full', side: 'right' },
+  '6-1D': { x: 365, y: 425, columns: 'full', side: 'right' },
+  '6-2': { x: 365, y: 395, columns: 'full', side: 'right' },
+  '7-1': { x: 365, y: 376, columns: 'full', side: 'right' },
+  '8-2A': { x: 365, y: 349, columns: 'full', side: 'right' },
+  '8-2B': { x: 365, y: 332, columns: 'full', side: 'right' },
+  '9-2': { x: 365, y: 296, columns: 'full', side: 'right' },
   '10A': { x: 69, y: 205, columns: 'outOnly' },
   '10B': { x: 69, y: 194, columns: 'outOnly' },
   '10C': { x: 69, y: 183, columns: 'outOnly' },
@@ -1001,23 +1001,23 @@ async function buildInspectionPdf(record) {
     };
 
     if (background === backgrounds[0]) {
-      write(record.info.establishmentName, 170, 718, 8);
-      write(record.info.address, 129, 707, 8);
-      write(record.info.cityStateZip, 58, 696, 7.5);
-      write(record.info.timeIn, 179, 696, 7.5);
-      write(record.info.timeOut, 314, 696, 7.5);
-      write(record.savedAt.split(',')[0], 103, 684, 7.5);
-      write(record.info.cfsm, 199, 684, 7.5);
-      write(record.info.permitNumber, 226, 649, 7.5);
-      write(record.violations.length ? 'Draft' : '100', 466, 681, 16, '700');
+      write(record.info.establishmentName, 176, 716, 7.4);
+      write(record.info.address, 133, 705, 7.4);
+      write(record.info.cityStateZip, 60, 694, 7);
+      write(record.info.timeIn, 181, 694, 7);
+      write(record.info.timeOut, 316, 694, 7);
+      write(record.savedAt.split(',')[0], 105, 682, 7);
+      write(record.info.cfsm, 201, 682, 7);
+      write(record.info.permitNumber, 228, 647, 7);
+      write(record.violations.length ? 'Draft' : '100', 466, 681, 14, '700');
       if (record.info.inspectionType === 'Routine') fillCircle(171, 678, 3);
       if (record.info.inspectionType === 'Follow-up') fillCircle(232, 678, 3);
       if (record.info.inspectionType === 'Opening') fillCircle(294, 678, 3);
       record.checklist.forEach(drawStatusMark);
-      drawSignature(operatorSignature, 116, 32, 210, 22);
-      drawSignature(inspectorSignature, 108, 10, 220, 22);
-      if (record.info.followUpRequired === 'Yes') fillCircle(433, 18, 3);
-      if (record.info.followUpRequired !== 'Yes') fillCircle(478, 18, 3);
+      drawSignature(operatorSignature, 112, 38, 200, 18);
+      drawSignature(inspectorSignature, 104, 17, 210, 18);
+      if (record.info.followUpRequired === 'Yes') fillCircle(433, 22, 3);
+      if (record.info.followUpRequired !== 'Yes') fillCircle(478, 22, 3);
     }
 
     if (background === backgrounds[1]) {
