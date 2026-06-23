@@ -947,6 +947,7 @@ async function buildInspectionPdf(record) {
   const backgrounds = await Promise.all([gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3].map(loadPdfImage));
   const operatorSignature = record.signatures.operator ? await loadPdfImage(record.signatures.operator) : null;
   const inspectorSignature = record.signatures.inspector ? await loadPdfImage(record.signatures.inspector) : null;
+  const violationById = new Map(record.violations.map((violation) => [violation.id, violation]));
   const pageImages = backgrounds.map((background) => {
     const canvas = document.createElement('canvas');
     canvas.width = 1275;
@@ -980,14 +981,19 @@ async function buildInspectionPdf(record) {
     const drawStatusMark = (item) => {
       const position = FORM_STATUS_POSITIONS[checklistFormKey(item)];
       if (!position || !item.status) return;
+      const violation = violationById.get(item.id);
       if (position.columns === 'outOnly') {
         if (item.status === 'OUT') fillCircle(position.x, position.y);
+        if (violation?.violationStatus === 'COS') fillCircle(position.side === 'right' ? 590 : 314, position.y);
+        if (violation?.violationStatus === 'Repeat') fillCircle(position.side === 'right' ? 606 : 328, position.y);
         return;
       }
       const offsets = { IN: 0, OUT: 16, NA: 32, NO: 47 };
       const offset = offsets[item.status];
       if (offset === undefined) return;
       fillCircle(position.x + offset, position.y);
+      if (violation?.violationStatus === 'COS') fillCircle(position.side === 'right' ? 590 : 314, position.y);
+      if (violation?.violationStatus === 'Repeat') fillCircle(position.side === 'right' ? 606 : 328, position.y);
     };
     const drawSignature = (image, x, y, width, height) => {
       if (!image) return;
@@ -1030,9 +1036,9 @@ async function buildInspectionPdf(record) {
       });
       record.violations.slice(0, 8).forEach((violation, index) => {
         const y = 360 - index * 64;
-        write(`${violation.number}${violation.letter || ''}`, 47, y, 9, '700');
-        writeWrapped(violation.comment, 86, y + 4, 7.2, 78, 9, 3);
-        writeWrapped(`CA: ${violation.correctiveAction}`, 86, y - 24, 7, 78, 8, 2);
+        write(`${violation.number}${violation.letter || ''}`, 47, y, 8, '700');
+        writeWrapped(violation.comment, 86, y + 4, 6.7, 88, 8, 3);
+        writeWrapped(`CA: ${violation.correctiveAction}`, 86, y - 22, 6.4, 88, 7.5, 2);
         write(violation.violationStatus, 510, y, 7, '700');
         write(violation.correctByDate, 510, y - 12, 7);
       });
@@ -1044,7 +1050,7 @@ async function buildInspectionPdf(record) {
       write(record.savedAt.split(',')[0], 500, 712, 8);
       writeWrapped(record.info.notes || 'Final report generated from InspectAid field workflow.', 64, 640, 8, 92, 10, 8);
       record.violations.slice(8, 18).forEach((violation, index) => {
-        writeWrapped(`${violation.number}${violation.letter || ''}: ${violation.comment} CA: ${violation.correctiveAction}`, 64, 548 - index * 42, 7.2, 95, 9, 4);
+        writeWrapped(`${violation.number}${violation.letter || ''}: ${violation.comment} CA: ${violation.correctiveAction}`, 64, 548 - index * 42, 6.7, 104, 8, 4);
       });
       drawSignature(operatorSignature, 72, 76, 132, 36);
       drawSignature(inspectorSignature, 252, 76, 132, 36);
