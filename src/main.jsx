@@ -960,6 +960,7 @@ function App() {
   const [violationDetails, setViolationDetails] = useState({});
   const [violationChats, setViolationChats] = useState({});
   const [violationChatDrafts, setViolationChatDrafts] = useState({});
+  const [showReportPreview, setShowReportPreview] = useState(false);
   const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
   const [violationModalItem, setViolationModalItem] = useState(null);
   const [checklistCategory, setChecklistCategory] = useState('All categories');
@@ -1055,6 +1056,12 @@ function App() {
   const modalCachedDate =
     violationModalItem && typeof window !== 'undefined' ? window.__violationDateCache?.[violationModalItem.id] : '';
   const approvedDraftCount = draftChecklist.filter((item) => item.approved).length;
+  const reportViolations = useMemo(() => {
+    return CHECKLIST_ITEMS.filter((item) => checklistStatuses[item.id] === 'OUT').map((item) => ({
+      item,
+      details: violationDetails[item.id] ?? {}
+    }));
+  }, [checklistStatuses, violationDetails]);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -1453,6 +1460,125 @@ function App() {
     );
   }
 
+  function renderReportPreview() {
+    const completedCount = CHECKLIST_ITEMS.length - checklistCounts.blank;
+    const previewDate = new Date().toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric'
+    });
+    const mappedViolations = reportViolations.map(({ item, details }) => {
+      const statusLabel = details.violationStatus || (details.repeat ? 'Repeat' : 'Violation');
+      const comment =
+        details.commentText ||
+        `Observed ${item.short.toLowerCase()} out of compliance. Corrective action must be documented before final report approval.`;
+      const correctiveAction =
+        details.correctiveActionText || 'Correct violation and maintain active managerial control to prevent recurrence.';
+      return { item, details, statusLabel, comment, correctiveAction };
+    });
+
+    return (
+      <div className="report-preview-stack">
+        <section className="official-report-page main-report-page" aria-label="Gwinnett inspection report preview page 1">
+          <div className="official-page-count">Page 1 of 3</div>
+          <div className="official-top">
+            <div className="gnr-logo">GNR</div>
+            <div className="official-title">
+              <strong>GNR PUBLIC HEALTH</strong>
+              <span>Food Service Establishment Inspection Report</span>
+            </div>
+            <div className="score-box">
+              <strong>Current score</strong>
+              <span>{reportViolations.length ? 'Draft' : '100'}</span>
+            </div>
+            <div className="score-box">
+              <strong>Current grade</strong>
+              <span>{reportViolations.length ? '-' : 'A'}</span>
+            </div>
+          </div>
+          <div className="official-field-grid">
+            <div><strong>Establishment Name:</strong><span /></div>
+            <div><strong>Address:</strong><span /></div>
+            <div><strong>City:</strong><span /></div>
+            <div><strong>Inspection Date:</strong><span>{previewDate}</span></div>
+            <div><strong>Time In:</strong><span /></div>
+            <div><strong>Time Out:</strong><span /></div>
+            <div><strong>CFSM:</strong><span /></div>
+            <div><strong>Permit#:</strong><span /></div>
+          </div>
+          <div className="official-band">Foodborne illness risk factors and public health interventions</div>
+          <div className="official-status-summary">
+            <div><strong>{completedCount}</strong><span>items marked</span></div>
+            <div><strong>{checklistCounts.IN}</strong><span>in</span></div>
+            <div><strong>{checklistCounts.OUT}</strong><span>out</span></div>
+            <div><strong>{checklistCounts.NA + checklistCounts.NO}</strong><span>n/a or n/o</span></div>
+          </div>
+          <div className="mapped-checklist-grid">
+            {CHECKLIST_ITEMS.slice(0, 18).map((item) => {
+              const status = checklistStatuses[item.id];
+              return (
+                <div className={status === 'OUT' ? 'mapped-row out' : 'mapped-row'} key={`preview-${item.id}`}>
+                  <span>{item.number}{item.letter ? item.letter : ''}</span>
+                  <strong>{item.short}</strong>
+                  <em>{status || '-'}</em>
+                </div>
+              );
+            })}
+          </div>
+          <div className="official-footer">
+            <span>Person in Charge (Signature)</span>
+            <span>Inspector (Signature)</span>
+            <span>Follow-up: YES O&nbsp;&nbsp;&nbsp;NO O</span>
+          </div>
+        </section>
+
+        <section className="official-report-page addendum-report-page" aria-label="Gwinnett inspection report preview addendum">
+          <div className="official-page-count">Page 2 of 3</div>
+          <h3>Food Service Establishment Inspection Report Addendum</h3>
+          <div className="official-addendum-fields">
+            <div><strong>Establishment</strong></div>
+            <div><strong>Permit #</strong></div>
+            <div><strong>Date</strong>{previewDate}</div>
+            <div><strong>Address</strong></div>
+            <div><strong>City/State</strong>{activeDepartment.name}</div>
+            <div><strong>Zip Code</strong></div>
+          </div>
+          <div className="official-band">Observations and corrective actions</div>
+          {mappedViolations.length ? (
+            <div className="official-violation-table">
+              {mappedViolations.map(({ item, details, statusLabel, comment, correctiveAction }) => (
+                <article key={`report-${item.id}`}>
+                  <div className="official-item-number">
+                    {item.number}{item.letter ? item.letter : ''}
+                  </div>
+                  <div>
+                    <strong>{item.short}</strong>
+                    <p>{comment}</p>
+                    <p><b>Corrective action:</b> {correctiveAction}</p>
+                    <small>
+                      {statusLabel}
+                      {details.repeat ? ' · Repeat' : ''}
+                      {details.correctByDate ? ` · Correct by ${details.correctByDate}` : ''}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="official-empty-report">
+              No OUT violations have been marked yet.
+            </div>
+          )}
+          <div className="official-footer">
+            <span>Person in Charge (Signature)</span>
+            <span>Inspector (Signature)</span>
+            <span>Date</span>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   function selectDepartment(department) {
     setActiveDepartmentId(department.id);
     setJurisdiction(department.name);
@@ -1782,6 +1908,11 @@ function App() {
                     <p>Checklist imported from Import-Food 2025. Each item can be marked and assisted in its own violation context.</p>
                   </div>
                   <div className="inspection-controls">
+                    <button className="report-preview-button" type="button" onClick={() => setShowReportPreview(true)}>
+                      <FileSearch size={17} />
+                      Preview report
+                      <span>{reportViolations.length}</span>
+                    </button>
                     <label>
                       <Filter size={16} />
                       <select value={checklistCategory} onChange={(event) => setChecklistCategory(event.target.value)}>
@@ -2315,6 +2446,35 @@ function App() {
               <button className="send-button modal-save" type="button" onClick={() => setViolationModalItem(null)}>
                 <CheckCircle2 size={18} />
                 Save details
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {showReportPreview && (
+        <div className="modal-backdrop report-backdrop" role="presentation">
+          <section className="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
+            <div className="modal-header report-modal-header">
+              <div>
+                <span className="premium-badge">
+                  <FileCheck2 size={15} />
+                  Gwinnett output form
+                </span>
+                <h2 id="report-preview-title">Preview report</h2>
+                <p>{reportViolations.length} OUT violation{reportViolations.length === 1 ? '' : 's'} mapped to the official form preview.</p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close report preview" onClick={() => setShowReportPreview(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            {renderReportPreview()}
+            <div className="modal-actions report-actions">
+              <button className="ghost-button" type="button" onClick={() => setShowReportPreview(false)}>
+                Close
+              </button>
+              <button className="send-button modal-save" type="button" onClick={() => window.print()}>
+                <FileCheck2 size={18} />
+                Print preview
               </button>
             </div>
           </section>
