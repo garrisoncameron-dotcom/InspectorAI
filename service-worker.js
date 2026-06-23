@@ -1,4 +1,4 @@
-const CACHE_NAME = 'inspectaid-cache-v5';
+const CACHE_NAME = 'inspectaid-cache-v6';
 const BASE_PATH = new URL(self.registration.scope).pathname;
 const ASSETS = [BASE_PATH, `${BASE_PATH}index.html`];
 
