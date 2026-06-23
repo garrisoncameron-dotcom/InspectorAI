@@ -673,6 +673,20 @@ const CHECKLIST_VIEW_FILTERS = [
 
 const VIOLATION_STATUS_OPTIONS = ['Violation', 'Repeat', 'COS'];
 
+const VIOLATION_HISTORY = {
+  '1-2-A-0': [
+    {
+      date: '06/18/2025',
+      status: 'Out',
+      citation: '511-6-1-.03(1)',
+      observation:
+        'Person in charge did not demonstrate adequate knowledge of food safety requirements during inspection.',
+      correctiveAction:
+        'PIC was instructed to maintain active managerial control and review required food safety procedures with staff.'
+    }
+  ]
+};
+
 const CANNED_VIOLATION_COMMENTS = [
   'Observed condition does not meet the approved food code requirement. Corrective action was discussed with the person in charge.',
   'Food item was observed outside approved temperature control limits. Product disposition and corrective action must be documented.',
@@ -987,6 +1001,7 @@ function App() {
   const [temperatureReadings, setTemperatureReadings] = useState([]);
   const [temperatureDraft, setTemperatureDraft] = useState({ location: '', item: '', temperature: '', standard: 'cold' });
   const [temperatureViolationPrompt, setTemperatureViolationPrompt] = useState(null);
+  const [historyModalItem, setHistoryModalItem] = useState(null);
   const [activeChecklistItem, setActiveChecklistItem] = useState(CHECKLIST_ITEMS[3]);
   const [violationModalItem, setViolationModalItem] = useState(null);
   const [checklistCategory, setChecklistCategory] = useState('All categories');
@@ -1082,6 +1097,7 @@ function App() {
   const modalCachedDate =
     violationModalItem && typeof window !== 'undefined' ? window.__violationDateCache?.[violationModalItem.id] : '';
   const approvedDraftCount = draftChecklist.filter((item) => item.approved).length;
+  const historyModalEntries = historyModalItem ? VIOLATION_HISTORY[historyModalItem.id] ?? [] : [];
   const reportViolations = useMemo(() => {
     return CHECKLIST_ITEMS.filter((item) => checklistStatuses[item.id] === 'OUT').map((item) => ({
       item,
@@ -1237,7 +1253,6 @@ function App() {
     if (!form) return;
     const selects = form.querySelectorAll('select');
     const textareas = form.querySelectorAll('textarea');
-    const checkbox = form.querySelector('input[type="checkbox"]');
     const date = form.querySelector('input[type="date"]');
     window.__violationDateCache = {
       ...(window.__violationDateCache ?? {}),
@@ -1246,7 +1261,6 @@ function App() {
     setViolationDetails((current) => ({
       ...current,
       [activeChecklistItem.id]: {
-        repeat: checkbox?.checked ?? false,
         violationStatus: selects[0]?.value ?? 'Violation',
         correctByDate: date?.value ?? '',
         cannedComment: selects[1]?.value ?? '',
@@ -1485,16 +1499,20 @@ function App() {
   }
 
   function renderViolationCapture(item, details, cachedDate) {
+    const historyEntries = VIOLATION_HISTORY[item.id] ?? [];
+    const hasPossibleRepeat = historyEntries.length > 0;
     return (
       <div className="violation-capture">
-        <label className="repeat-toggle">
-          <input
-            type="checkbox"
-            checked={Boolean(details?.repeat)}
-            onChange={(event) => updateViolationDetail(item.id, 'repeat', event.target.checked)}
-          />
-          Repeat
-        </label>
+        <div className={hasPossibleRepeat ? 'repeat-warning active' : 'repeat-warning'}>
+          <div>
+            <AlertTriangle size={18} />
+            <span>{hasPossibleRepeat ? 'Possible repeat' : 'No prior violation match loaded'}</span>
+          </div>
+          <button type="button" onClick={() => setHistoryModalItem(item)}>
+            <History size={16} />
+            Violation history
+          </button>
+        </div>
         <label>
           <span>Violation status</span>
           <select
@@ -1586,7 +1604,7 @@ function App() {
       year: 'numeric'
     });
     const mappedViolations = reportViolations.map(({ item, details }) => {
-      const statusLabel = details.violationStatus || (details.repeat ? 'Repeat' : 'Violation');
+      const statusLabel = details.violationStatus || 'Violation';
       const comment =
         details.commentText ||
         `Observed ${item.short.toLowerCase()} out of compliance. Corrective action must be documented before final report approval.`;
@@ -1693,7 +1711,6 @@ function App() {
                     <p><b>Corrective action:</b> {correctiveAction}</p>
                     <small>
                       {statusLabel}
-                      {details.repeat ? ' · Repeat' : ''}
                       {details.correctByDate ? ` · Correct by ${details.correctByDate}` : ''}
                     </small>
                   </div>
@@ -2658,6 +2675,63 @@ function App() {
                 <CheckCircle2 size={18} />
                 Save details
               </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {historyModalItem && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="violation-modal history-modal" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+            <div className="modal-header">
+              <div>
+                <span className={historyModalEntries.length ? 'premium-badge alert-badge' : 'premium-badge'}>
+                  <History size={15} />
+                  Violation history
+                </span>
+                <h2 id="history-modal-title">
+                  {historyModalItem.number}{historyModalItem.letter ? historyModalItem.letter : ''}: {historyModalItem.short}
+                </h2>
+                <p>{historyModalEntries.length ? 'Prior inspection data suggests this may be a repeat.' : 'No prior inspection history is loaded in this prototype.'}</p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close violation history" onClick={() => setHistoryModalItem(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            {historyModalEntries.length ? (
+              <div className="history-list">
+                {historyModalEntries.map((entry) => (
+                  <article key={`${entry.date}-${entry.citation}`}>
+                    <div>
+                      <strong>{entry.date}</strong>
+                      <span>{entry.status} · {entry.citation}</span>
+                    </div>
+                    <p>{entry.observation}</p>
+                    <p><b>Corrective action:</b> {entry.correctiveAction}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="history-empty">
+                Production mode will pull prior inspection results, cited observations, correction status, and dates from the jurisdiction record system.
+              </div>
+            )}
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={() => setHistoryModalItem(null)}>
+                Close
+              </button>
+              {historyModalEntries.length > 0 && (
+                <button
+                  className="send-button modal-save"
+                  type="button"
+                  onClick={() => {
+                    updateViolationDetail(historyModalItem.id, 'violationStatus', 'Repeat');
+                    setHistoryModalItem(null);
+                  }}
+                >
+                  <AlertTriangle size={18} />
+                  Mark repeat
+                </button>
+              )}
             </div>
           </section>
         </div>
