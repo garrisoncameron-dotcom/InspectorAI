@@ -810,7 +810,168 @@ function pdfWrappedLines(text, x, y, size = 8, maxLength = 72, lineHeight = 10, 
     .join('\n');
 }
 
+function loadPdfImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+function dataUrlToBytes(dataUrl) {
+  const base64 = dataUrl.split(',')[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function makeImageOnlyPdf(pageImages) {
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const encoder = new TextEncoder();
+  const objects = [];
+  const addObject = (parts) => {
+    objects.push(Array.isArray(parts) ? parts : [parts]);
+    return objects.length;
+  };
+  const imageIds = pageImages.map((imageBytes) =>
+    addObject([
+      `<< /Type /XObject /Subtype /Image /Width 1275 /Height 1650 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`,
+      imageBytes,
+      '\nendstream'
+    ])
+  );
+  const contentIds = imageIds.map((imageId, index) => {
+    const content = `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /PageImage${index + 1} Do Q`;
+    return addObject(`<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`);
+  });
+  const pageIds = imageIds.map(() => addObject(''));
+  const kids = pageIds.map((id) => `${id} 0 R`).join(' ');
+  const pagesId = addObject(`<< /Type /Pages /Kids [${kids}] /Count ${pageIds.length} >>`);
+  pageIds.forEach((pageId, index) => {
+    objects[pageId - 1] = [
+      `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /PageImage${index + 1} ${imageIds[index]} 0 R >> >> /Contents ${contentIds[index]} 0 R >>`
+    ];
+  });
+  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  const chunks = [encoder.encode('%PDF-1.4\n')];
+  const offsets = [0];
+  let byteLength = chunks[0].length;
+  const pushPart = (part) => {
+    const bytes = typeof part === 'string' ? encoder.encode(part) : part;
+    chunks.push(bytes);
+    byteLength += bytes.length;
+  };
+  objects.forEach((parts, index) => {
+    offsets.push(byteLength);
+    pushPart(`${index + 1} 0 obj\n`);
+    parts.forEach(pushPart);
+    pushPart('\nendobj\n');
+  });
+  const xrefOffset = byteLength;
+  pushPart(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
+  offsets.slice(1).forEach((offset) => pushPart(`${String(offset).padStart(10, '0')} 00000 n \n`));
+  pushPart(`trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  return new Blob(chunks, { type: 'application/pdf' });
+}
+
 async function buildInspectionPdf(record) {
+  const backgrounds = await Promise.all([gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3].map(loadPdfImage));
+  const operatorSignature = record.signatures.operator ? await loadPdfImage(record.signatures.operator) : null;
+  const inspectorSignature = record.signatures.inspector ? await loadPdfImage(record.signatures.inspector) : null;
+  const pageImages = backgrounds.map((background) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1275;
+    canvas.height = 1650;
+    const ctx = canvas.getContext('2d');
+    const sx = canvas.width / 612;
+    const sy = canvas.height / 792;
+    const fontScale = 2.08;
+    ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#111';
+    ctx.textBaseline = 'alphabetic';
+
+    const tx = (x) => x * sx;
+    const ty = (y) => canvas.height - y * sy;
+    const write = (text, x, y, size = 8, weight = '500') => {
+      if (!text) return;
+      ctx.font = `${weight} ${Math.max(10, Math.round(size * fontScale))}px Arial`;
+      ctx.fillText(String(text), tx(x), ty(y));
+    };
+    const writeWrapped = (text, x, y, size = 8, maxLength = 72, lineHeight = 10, limit = 6) => {
+      wrapPdfText(text, maxLength).slice(0, limit).forEach((line, index) => write(line, x, y - index * lineHeight, size));
+    };
+    const drawSignature = (image, x, y, width, height) => {
+      if (!image) return;
+      ctx.drawImage(image, tx(x), ty(y + height), width * sx, height * sy);
+    };
+
+    if (background === backgrounds[0]) {
+      write(record.info.establishmentName, 104, 650, 9);
+      write(record.info.address, 72, 632, 8);
+      write(record.info.cityStateZip, 74, 614, 8);
+      write(record.info.permitNumber, 434, 650, 8);
+      write(record.info.inspectionType, 438, 632, 8);
+      write(record.savedAt.split(',')[0], 434, 614, 8);
+      write(record.info.timeIn, 95, 596, 8);
+      write(record.info.timeOut, 208, 596, 8);
+      write(record.info.cfsm, 330, 596, 8);
+      write(record.violations.length ? 'Draft' : '100', 520, 675, 16, '700');
+      record.checklist.slice(0, 27).forEach((item, index) => {
+        if (!item.status) return;
+        const col = index < 14 ? 0 : 1;
+        const row = col === 0 ? index : index - 14;
+        write(item.status, col === 0 ? 276 : 557, 487 - row * 19.8, 7, '700');
+      });
+      drawSignature(operatorSignature, 70, 59, 132, 36);
+      drawSignature(inspectorSignature, 255, 59, 132, 36);
+      write(record.info.followUpRequired === 'Yes' ? 'YES' : 'NO', 500, 72, 8, '700');
+    }
+
+    if (background === backgrounds[1]) {
+      write(record.info.establishmentName, 108, 712, 8);
+      write(record.info.permitNumber, 408, 712, 8);
+      write(record.savedAt.split(',')[0], 500, 712, 8);
+      write(record.info.address, 90, 695, 8);
+      write(record.info.cityStateZip, 410, 695, 8);
+      record.temperatureReadings.slice(0, 18).forEach((reading, index) => {
+        const col = index % 3;
+        const row = Math.floor(index / 3);
+        const x = 55 + col * 180;
+        const y = 548 - row * 24;
+        writeWrapped(`${reading.item || 'Item'} / ${reading.location || 'Location'}`, x, y, 6.5, 26, 8, 2);
+        write(reading.temperature || '-', x + 122, y - 4, 8, '700');
+      });
+      record.violations.slice(0, 8).forEach((violation, index) => {
+        const y = 360 - index * 64;
+        write(`${violation.number}${violation.letter || ''}`, 47, y, 9, '700');
+        writeWrapped(violation.comment, 86, y + 4, 7.2, 78, 9, 3);
+        writeWrapped(`CA: ${violation.correctiveAction}`, 86, y - 24, 7, 78, 8, 2);
+        write(violation.violationStatus, 510, y, 7, '700');
+        write(violation.correctByDate, 510, y - 12, 7);
+      });
+    }
+
+    if (background === backgrounds[2]) {
+      write(record.info.establishmentName, 108, 712, 8);
+      write(record.info.permitNumber, 408, 712, 8);
+      write(record.savedAt.split(',')[0], 500, 712, 8);
+      writeWrapped(record.info.notes || 'Final report generated from InspectAid field workflow.', 64, 640, 8, 92, 10, 8);
+      record.violations.slice(8, 18).forEach((violation, index) => {
+        writeWrapped(`${violation.number}${violation.letter || ''}: ${violation.comment} CA: ${violation.correctiveAction}`, 64, 548 - index * 42, 7.2, 95, 9, 4);
+      });
+      drawSignature(operatorSignature, 72, 76, 132, 36);
+      drawSignature(inspectorSignature, 252, 76, 132, 36);
+    }
+
+    return dataUrlToBytes(canvas.toDataURL('image/jpeg', 0.86));
+  });
+  return makeImageOnlyPdf(pageImages);
+}
+
+async function buildInspectionPdfLegacy(record) {
   const pageWidth = 612;
   const pageHeight = 792;
   const encoder = new TextEncoder();
