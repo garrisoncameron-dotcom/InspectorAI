@@ -36,6 +36,14 @@ import {
   Wifi,
   X
 } from 'lucide-react';
+import {
+  DEFAULT_CORE_API_URL,
+  askCoreApprovedSources,
+  getStoredCoreSettings,
+  inspectionAssistCore,
+  jurisdictionIdForName,
+  saveCoreSettings
+} from './api/inspectorAiClient.js';
 import './styles.css';
 
 
@@ -1635,10 +1643,15 @@ function generateDraftChecklist(selectedDocs, jurisdictionName) {
 }
 
 function App() {
+  const storedCoreSettings = useMemo(() => getStoredCoreSettings(), []);
   const [query, setQuery] = useState('Cold holding chicken at 48 F in Gwinnett County');
   const [jurisdiction, setJurisdiction] = useState('Gwinnett County GA');
   const [answer, setAnswer] = useState(null);
   const [history, setHistory] = useState([]);
+  const [aiRuntimeMode, setAiRuntimeMode] = useState(storedCoreSettings.mode);
+  const [coreApiUrl, setCoreApiUrl] = useState(storedCoreSettings.baseUrl || DEFAULT_CORE_API_URL);
+  const [coreStatus, setCoreStatus] = useState({ state: 'idle', message: '' });
+  const [coreAssistByItem, setCoreAssistByItem] = useState({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [photoName, setPhotoName] = useState('');
   const [photoFindings, setPhotoFindings] = useState([]);
@@ -1744,18 +1757,28 @@ function App() {
   const activeSourceDocs = APPROVED_DOCS.filter((doc) => activeDocIds.includes(doc.id));
   const approvedCount = activeSourceDocs.reduce((count, doc) => count + doc.sections.length, 0);
   const sourceCoverage = sourceCoverageForDocs(activeSourceDocs);
-  const activeAssist = activeChecklistItem
+  const coreJurisdictionId = jurisdictionIdForName(jurisdiction, activeDepartmentId);
+  const coreMode = aiRuntimeMode === 'core';
+  const demoActiveAssist = activeChecklistItem
     ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
     : null;
+  const activeAssist =
+    coreMode && activeChecklistItem && coreAssistByItem[activeChecklistItem.id]
+      ? coreAssistByItem[activeChecklistItem.id]
+      : demoActiveAssist;
   const activeViolationDetails = activeChecklistItem ? violationDetails[activeChecklistItem.id] : null;
   const activeViolationChat = activeChecklistItem ? violationChats[activeChecklistItem.id] ?? [] : [];
   const activeViolationChatDraft = activeChecklistItem ? violationChatDrafts[activeChecklistItem.id] ?? '' : '';
   const activeCachedDate =
     activeChecklistItem && typeof window !== 'undefined' ? window.__violationDateCache?.[activeChecklistItem.id] : '';
   const modalViolationDetails = violationModalItem ? violationDetails[violationModalItem.id] : null;
-  const modalViolationAssist = violationModalItem
+  const demoModalViolationAssist = violationModalItem
     ? composeInspectionAssist(violationModalItem, checklistStatuses[violationModalItem.id], jurisdiction, activeDocIds)
     : null;
+  const modalViolationAssist =
+    coreMode && violationModalItem && coreAssistByItem[violationModalItem.id]
+      ? coreAssistByItem[violationModalItem.id]
+      : demoModalViolationAssist;
   const modalViolationChat = violationModalItem ? violationChats[violationModalItem.id] ?? [] : [];
   const modalViolationChatDraft = violationModalItem ? violationChatDrafts[violationModalItem.id] ?? '' : '';
   const modalCachedDate =
@@ -1821,9 +1844,66 @@ function App() {
     };
   }, [activeChecklistItem, checklistStatuses]);
 
-  function ask(nextQuery = query) {
+  useEffect(() => {
+    saveCoreSettings({ mode: aiRuntimeMode, baseUrl: coreApiUrl });
+  }, [aiRuntimeMode, coreApiUrl]);
+
+  useEffect(() => {
+    if (!coreMode || !activeChecklistItem) return undefined;
+    let cancelled = false;
+    const item = activeChecklistItem;
+    setCoreStatus({ state: 'loading', message: 'Asking InspectorAI Core for item guidance...' });
+
+    inspectionAssistCore({
+      baseUrl: coreApiUrl,
+      jurisdictionId: coreJurisdictionId,
+      item,
+      status: checklistStatuses[item.id] ?? '',
+      observedFacts: violationDetails[item.id]?.commentText ?? ''
+    })
+      .then((assist) => {
+        if (cancelled) return;
+        setCoreAssistByItem((current) => ({ ...current, [item.id]: assist }));
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setCoreStatus({
+          state: 'error',
+          message: `Core unavailable. Demo guidance is still active. ${error.message}`
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChecklistItem, checklistStatuses, coreApiUrl, coreJurisdictionId, coreMode, violationDetails]);
+
+  async function ask(nextQuery = query) {
     const trimmed = nextQuery.trim();
     if (!trimmed) return;
+
+    if (coreMode) {
+      setCoreStatus({ state: 'loading', message: 'Asking InspectorAI Core...' });
+      try {
+        const result = await askCoreApprovedSources({
+          baseUrl: coreApiUrl,
+          query: trimmed,
+          jurisdiction,
+          jurisdictionId: coreJurisdictionId
+        });
+        setAnswer(result);
+        setHistory((items) => [result, ...items].slice(0, 6));
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
+        return;
+      } catch (error) {
+        setCoreStatus({
+          state: 'error',
+          message: `Core unavailable. Falling back to demo answer. ${error.message}`
+        });
+      }
+    }
+
     const evidence = findEvidence(trimmed, jurisdiction, activeDocIds);
     const composed = composeAnswer(trimmed, evidence, { jurisdiction, coverage: sourceCoverage });
     const result = {
@@ -2153,10 +2233,34 @@ function App() {
     await downloadFinalPdf(record);
   }
 
-  function askViolationQuestion(item, evidence) {
+  async function getViolationAnswer(question, item, evidence) {
+    if (coreMode) {
+      try {
+        setCoreStatus({ state: 'loading', message: 'Asking InspectorAI Core about this violation...' });
+        const details = violationDetails[item.id] ?? {};
+        const result = await askCoreApprovedSources({
+          baseUrl: coreApiUrl,
+          jurisdiction,
+          jurisdictionId: coreJurisdictionId,
+          query: `${item.number}${item.letter ?? ''} ${item.short}. Inspector question: ${question}. Current observation: ${details.commentText ?? ''}`
+        });
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
+        return result.body;
+      } catch (error) {
+        setCoreStatus({
+          state: 'error',
+          message: `Core unavailable for violation chat. Demo guidance is still active. ${error.message}`
+        });
+      }
+    }
+
+    return composeViolationChatAnswer(question, item, evidence, violationDetails[item.id]);
+  }
+
+  async function askViolationQuestion(item, evidence) {
     const question = (violationChatDrafts[item.id] ?? '').trim();
     if (!question) return;
-    const answerText = composeViolationChatAnswer(question, item, evidence, violationDetails[item.id]);
+    const answerText = await getViolationAnswer(question, item, evidence);
     setViolationChats((current) => ({
       ...current,
       [item.id]: [
@@ -2168,8 +2272,8 @@ function App() {
     setViolationChatDrafts((current) => ({ ...current, [item.id]: '' }));
   }
 
-  function useViolationPrompt(item, prompt, evidence) {
-    const answerText = composeViolationChatAnswer(prompt, item, evidence, violationDetails[item.id]);
+  async function useViolationPrompt(item, prompt, evidence) {
+    const answerText = await getViolationAnswer(prompt, item, evidence);
     setViolationChats((current) => ({
       ...current,
       [item.id]: [
@@ -2762,6 +2866,41 @@ function App() {
                     </button>
                   </div>
 
+                  <div className={`runtime-panel ${coreStatus.state}`}>
+                    <div className="runtime-toggle" aria-label="AI runtime mode">
+                      <span><Radio size={15} /> AI Runtime</span>
+                      <button
+                        className={aiRuntimeMode === 'demo' ? 'active' : ''}
+                        type="button"
+                        onClick={() => setAiRuntimeMode('demo')}
+                      >
+                        Demo
+                      </button>
+                      <button
+                        className={coreMode ? 'active' : ''}
+                        type="button"
+                        onClick={() => setAiRuntimeMode('core')}
+                      >
+                        Core AI
+                      </button>
+                    </div>
+                    {coreMode && (
+                      <label>
+                        <span>Core API</span>
+                        <input
+                          value={coreApiUrl}
+                          onChange={(event) => setCoreApiUrl(event.target.value)}
+                          placeholder={DEFAULT_CORE_API_URL}
+                        />
+                      </label>
+                    )}
+                    <p>
+                      {coreMode
+                        ? coreStatus.message || 'Core mode calls InspectorAI-Core for Ask and item-level AI Assist.'
+                        : 'Demo mode uses the local approved-source prototype logic.'}
+                    </p>
+                  </div>
+
                   <div className="ask-box">
                     <MessageSquareText size={20} />
                     <textarea
@@ -2773,7 +2912,7 @@ function App() {
                       aria-label="Inspection question"
                     />
                     <button className="send-button" type="button" onClick={() => ask()} aria-label="Ask question">
-                      <Send size={20} />
+                      {coreStatus.state === 'loading' && coreMode ? <Loader2 size={20} className="spin" /> : <Send size={20} />}
                     </button>
                   </div>
 
