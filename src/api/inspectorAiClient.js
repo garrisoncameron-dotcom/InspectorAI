@@ -1,6 +1,18 @@
 const CORE_SETTINGS_KEY = 'inspectaid.coreAiSettings';
 
-export const DEFAULT_CORE_API_URL = 'http://127.0.0.1:8787';
+export const CONFIGURED_CORE_API_URL = import.meta.env.VITE_INSPECTORAI_CORE_URL || '';
+export const DEFAULT_CORE_API_URL = CONFIGURED_CORE_API_URL || 'http://127.0.0.1:8787';
+
+export function coreControlsEnabled() {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  const localHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  return import.meta.env.VITE_ENABLE_CORE_CONTROLS === 'true' || params.get('coreControls') === '1' || localHost;
+}
+
+export function coreRuntimeAvailable(baseUrl) {
+  return Boolean((baseUrl || '').trim()) && (coreControlsEnabled() || Boolean(CONFIGURED_CORE_API_URL));
+}
 
 export function jurisdictionIdForName(jurisdictionName, fallback = 'gwinnett-ga') {
   const normalized = jurisdictionName.toLowerCase();
@@ -17,8 +29,9 @@ export function getStoredCoreSettings() {
 
   try {
     const stored = JSON.parse(window.localStorage.getItem(CORE_SETTINGS_KEY) || '{}');
+    const coreAllowed = coreControlsEnabled() || Boolean(CONFIGURED_CORE_API_URL);
     return {
-      mode: stored.mode === 'core' ? 'core' : 'demo',
+      mode: stored.mode === 'core' && coreAllowed ? 'core' : 'demo',
       baseUrl: stored.baseUrl || DEFAULT_CORE_API_URL
     };
   } catch {

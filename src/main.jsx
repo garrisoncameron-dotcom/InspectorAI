@@ -39,6 +39,8 @@ import {
 import {
   DEFAULT_CORE_API_URL,
   askCoreApprovedSources,
+  coreControlsEnabled,
+  coreRuntimeAvailable,
   getStoredCoreSettings,
   inspectionAssistCore,
   jurisdictionIdForName,
@@ -1652,6 +1654,7 @@ function App() {
   const [coreApiUrl, setCoreApiUrl] = useState(storedCoreSettings.baseUrl || DEFAULT_CORE_API_URL);
   const [coreStatus, setCoreStatus] = useState({ state: 'idle', message: '' });
   const [coreAssistByItem, setCoreAssistByItem] = useState({});
+  const [showCoreControls] = useState(() => coreControlsEnabled());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [photoName, setPhotoName] = useState('');
   const [photoFindings, setPhotoFindings] = useState([]);
@@ -1758,7 +1761,8 @@ function App() {
   const approvedCount = activeSourceDocs.reduce((count, doc) => count + doc.sections.length, 0);
   const sourceCoverage = sourceCoverageForDocs(activeSourceDocs);
   const coreJurisdictionId = jurisdictionIdForName(jurisdiction, activeDepartmentId);
-  const coreMode = aiRuntimeMode === 'core';
+  const coreCanRun = coreRuntimeAvailable(coreApiUrl);
+  const coreMode = aiRuntimeMode === 'core' && coreCanRun;
   const demoActiveAssist = activeChecklistItem
     ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
     : null;
@@ -1847,6 +1851,12 @@ function App() {
   useEffect(() => {
     saveCoreSettings({ mode: aiRuntimeMode, baseUrl: coreApiUrl });
   }, [aiRuntimeMode, coreApiUrl]);
+
+  useEffect(() => {
+    if (aiRuntimeMode === 'core' && !coreCanRun) {
+      setAiRuntimeMode('demo');
+    }
+  }, [aiRuntimeMode, coreCanRun]);
 
   useEffect(() => {
     if (!coreMode || !activeChecklistItem) return undefined;
@@ -2866,25 +2876,27 @@ function App() {
                     </button>
                   </div>
 
-                  <div className={`runtime-panel ${coreStatus.state}`}>
-                    <div className="runtime-toggle" aria-label="AI runtime mode">
-                      <span><Radio size={15} /> AI Runtime</span>
-                      <button
-                        className={aiRuntimeMode === 'demo' ? 'active' : ''}
-                        type="button"
-                        onClick={() => setAiRuntimeMode('demo')}
-                      >
-                        Demo
-                      </button>
-                      <button
-                        className={coreMode ? 'active' : ''}
-                        type="button"
-                        onClick={() => setAiRuntimeMode('core')}
-                      >
-                        Core AI
-                      </button>
-                    </div>
-                    {coreMode && (
+                  {showCoreControls && (
+                    <div className={`runtime-panel ${coreStatus.state}`}>
+                      <div className="runtime-toggle" aria-label="AI runtime mode">
+                        <span><Radio size={15} /> AI Runtime</span>
+                        <button
+                          className={aiRuntimeMode === 'demo' ? 'active' : ''}
+                          type="button"
+                          onClick={() => setAiRuntimeMode('demo')}
+                        >
+                          Demo
+                        </button>
+                        <button
+                          className={coreMode ? 'active' : ''}
+                          type="button"
+                          onClick={() => setAiRuntimeMode('core')}
+                          disabled={!coreCanRun}
+                          title={coreCanRun ? 'Use InspectorAI Core' : 'Set a Core API URL before enabling Core AI'}
+                        >
+                          Core AI
+                        </button>
+                      </div>
                       <label>
                         <span>Core API</span>
                         <input
@@ -2893,13 +2905,13 @@ function App() {
                           placeholder={DEFAULT_CORE_API_URL}
                         />
                       </label>
-                    )}
-                    <p>
-                      {coreMode
-                        ? coreStatus.message || 'Core mode calls InspectorAI-Core for Ask and item-level AI Assist.'
-                        : 'Demo mode uses the local approved-source prototype logic.'}
-                    </p>
-                  </div>
+                      <p>
+                        {coreMode
+                          ? coreStatus.message || 'Core mode calls InspectorAI-Core for Ask and item-level AI Assist.'
+                          : 'Public demo mode remains active. Core AI controls are enabled only for staging and local testing.'}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="ask-box">
                     <MessageSquareText size={20} />
