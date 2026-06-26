@@ -607,6 +607,23 @@ const PHOTO_FEEDBACK_OPTIONS = [
   { id: 'supervisor', label: 'Needs supervisor', icon: AlertTriangle }
 ];
 
+const PHOTO_REVIEW_STATUS = {
+  pending: 'Pending review',
+  reviewed: 'Reviewed',
+  training: 'Training approved',
+  followup: 'Needs follow-up'
+};
+
+function loadPhotoFeedbackQueue() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
 const FEATURES = [
   { id: 'ask', label: 'Ask', icon: MessageSquareText },
   { id: 'inspection', label: 'AI Inspection', icon: Sparkles },
@@ -1673,6 +1690,7 @@ function App() {
   const [photoSummary, setPhotoSummary] = useState('');
   const [photoFindings, setPhotoFindings] = useState([]);
   const [photoFeedbackByFinding, setPhotoFeedbackByFinding] = useState({});
+  const [photoFeedbackQueue, setPhotoFeedbackQueue] = useState(() => loadPhotoFeedbackQueue());
   const [listening, setListening] = useState(false);
   const [activeFeature, setActiveFeature] = useState('ask');
   const [checklistStatuses, setChecklistStatuses] = useState({});
@@ -1779,6 +1797,17 @@ function App() {
   const coreCanRun = coreRuntimeAvailable(coreApiUrl);
   const coreMode = aiRuntimeMode === 'core' && coreCanRun;
   const photoFeedbackCount = Object.values(photoFeedbackByFinding).filter((feedback) => feedback.decision).length;
+  const photoReviewStats = useMemo(() => {
+    return photoFeedbackQueue.reduce(
+      (stats, item) => {
+        const status = item.reviewStatus ?? 'pending';
+        stats.total += 1;
+        stats[status] = (stats[status] ?? 0) + 1;
+        return stats;
+      },
+      { total: 0, pending: 0, reviewed: 0, training: 0, followup: 0 }
+    );
+  }, [photoFeedbackQueue]);
   const demoActiveAssist = activeChecklistItem
     ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
     : null;
@@ -2030,15 +2059,45 @@ function App() {
     try {
       const existing = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
       const withoutCurrent = existing.filter((item) => item.id !== entry.id);
-      window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify([entry, ...withoutCurrent].slice(0, 100)));
+      const nextQueue = [entry, ...withoutCurrent].slice(0, 100);
+      window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify(nextQueue));
+      setPhotoFeedbackQueue(nextQueue);
     } catch {
       // Feedback is helpful, but losing local queue storage should not interrupt inspection work.
     }
   }
 
+  function persistPhotoFeedbackQueue(nextQueue) {
+    setPhotoFeedbackQueue(nextQueue);
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify(nextQueue));
+    } catch {
+      // Supervisor review state should never block the active field workflow.
+    }
+  }
+
+  function updatePhotoReviewEntry(id, patch) {
+    const nextQueue = photoFeedbackQueue.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            ...patch,
+            reviewedAt: new Date().toISOString()
+          }
+        : item
+    );
+    persistPhotoFeedbackQueue(nextQueue);
+  }
+
+  function removePhotoReviewEntry(id) {
+    persistPhotoFeedbackQueue(photoFeedbackQueue.filter((item) => item.id !== id));
+  }
+
   function updatePhotoFindingFeedback(index, finding, patch) {
     const id = photoFindingFeedbackKey(finding, index);
     setPhotoFeedbackByFinding((current) => {
+      const existingEntry = current[id] ?? {};
       const entry = {
         id,
         photoName,
@@ -2048,8 +2107,10 @@ function App() {
         findingRisk: finding.risk,
         findingVerification: finding.verification,
         confidence: finding.confidence,
-        createdAt: new Date().toISOString(),
-        ...(current[id] ?? {}),
+        createdAt: existingEntry.createdAt ?? new Date().toISOString(),
+        reviewStatus: existingEntry.reviewStatus ?? 'pending',
+        ...existingEntry,
+        updatedAt: new Date().toISOString(),
         ...patch
       };
       savePhotoFeedbackQueue(entry);
@@ -3982,6 +4043,89 @@ function App() {
                       <div><strong>{activeDepartment.checklist}</strong><span>active inspection form</span></div>
                     </div>
                   </section>
+                </div>
+                <div className="photo-review-panel">
+                  <div className="registry-head">
+                    <div>
+                      <span className="premium-badge"><Sparkles size={15} /> Photo AI review queue</span>
+                      <h3>Supervisor-reviewed learning loop</h3>
+                      <p>Inspector feedback from Photo Aid is held for department review before it becomes training-quality guidance.</p>
+                    </div>
+                    <div className="photo-review-metrics">
+                      <div><strong>{photoReviewStats.pending}</strong><span>pending</span></div>
+                      <div><strong>{photoReviewStats.followup}</strong><span>follow-up</span></div>
+                      <div><strong>{photoReviewStats.training}</strong><span>training approved</span></div>
+                    </div>
+                  </div>
+                  <div className="photo-review-list">
+                    {photoFeedbackQueue.length ? (
+                      photoFeedbackQueue.map((entry) => {
+                        const feedbackOption = PHOTO_FEEDBACK_OPTIONS.find((option) => option.id === entry.decision);
+                        const FeedbackIcon = feedbackOption?.icon ?? CircleHelp;
+                        const reviewStatus = entry.reviewStatus ?? 'pending';
+                        return (
+                          <article className={`photo-review-row ${reviewStatus}`} key={entry.id}>
+                            <div className="photo-review-topline">
+                              <span className="pill"><FeedbackIcon size={13} /> {feedbackOption?.label ?? 'Unmarked'}</span>
+                              <span className="pill good">{PHOTO_REVIEW_STATUS[reviewStatus] ?? PHOTO_REVIEW_STATUS.pending}</span>
+                            </div>
+                            <div className="photo-review-body">
+                              <div>
+                                <h4>{entry.findingLabel}</h4>
+                                <p>{entry.findingRisk}</p>
+                                {entry.findingVerification && <blockquote>{entry.findingVerification}</blockquote>}
+                                {entry.note && <small>Inspector note: {entry.note}</small>}
+                              </div>
+                              <div className="photo-review-meta">
+                                <span>{entry.jurisdiction}</span>
+                                <span>{entry.photoName || 'Inspection photo'}</span>
+                                <span>{entry.createdAt ? new Date(entry.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Queued locally'}</span>
+                                {entry.confidence && <span>{entry.confidence} confidence</span>}
+                              </div>
+                            </div>
+                            <label className="photo-review-note">
+                              <span>Supervisor note</span>
+                              <textarea
+                                value={entry.supervisorNote ?? ''}
+                                onChange={(event) => updatePhotoReviewEntry(entry.id, { supervisorNote: event.target.value })}
+                                placeholder="Approve, correct, or explain what should happen before this improves the model."
+                              />
+                            </label>
+                            <div className="photo-review-actions">
+                              <button type="button" onClick={() => updatePhotoReviewEntry(entry.id, { reviewStatus: 'reviewed' })}>
+                                <BadgeCheck size={15} />
+                                Mark reviewed
+                              </button>
+                              <button type="button" onClick={() => updatePhotoReviewEntry(entry.id, { reviewStatus: 'training' })}>
+                                <CheckCircle2 size={15} />
+                                Approve for training
+                              </button>
+                              <button type="button" onClick={() => updatePhotoReviewEntry(entry.id, { reviewStatus: 'followup' })}>
+                                <AlertTriangle size={15} />
+                                Needs follow-up
+                              </button>
+                              <button type="button" onClick={() => removePhotoReviewEntry(entry.id)}>
+                                <X size={15} />
+                                Remove
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })
+                    ) : (
+                      <div className="photo-review-empty">
+                        <CircleHelp size={18} />
+                        <div>
+                          <strong>No photo feedback queued yet</strong>
+                          <p>Run a Photo Aid review, then mark each possible finding as confirmed, not visible, wrong, or needing supervisor review.</p>
+                        </div>
+                        <button type="button" onClick={() => setActiveFeature('photo')}>
+                          <Camera size={15} />
+                          Open Photo Aid
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="master-registry">
                   <div className="registry-head">
