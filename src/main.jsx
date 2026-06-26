@@ -39,6 +39,7 @@ import {
 import {
   DEFAULT_CORE_API_URL,
   askCoreApprovedSources,
+  createCorePilotSession,
   coreControlsEnabled,
   coreRuntimeAvailable,
   getStoredCoreSettings,
@@ -1652,6 +1653,8 @@ function App() {
   const [history, setHistory] = useState([]);
   const [aiRuntimeMode, setAiRuntimeMode] = useState(storedCoreSettings.mode);
   const [coreApiUrl, setCoreApiUrl] = useState(storedCoreSettings.baseUrl || DEFAULT_CORE_API_URL);
+  const [coreApiToken, setCoreApiToken] = useState(storedCoreSettings.token || '');
+  const [coreInviteCode, setCoreInviteCode] = useState('');
   const [coreStatus, setCoreStatus] = useState({ state: 'idle', message: '' });
   const [coreAssistByItem, setCoreAssistByItem] = useState({});
   const [showCoreControls] = useState(() => coreControlsEnabled());
@@ -1849,14 +1852,43 @@ function App() {
   }, [activeChecklistItem, checklistStatuses]);
 
   useEffect(() => {
-    saveCoreSettings({ mode: aiRuntimeMode, baseUrl: coreApiUrl });
-  }, [aiRuntimeMode, coreApiUrl]);
+    saveCoreSettings({ mode: aiRuntimeMode, baseUrl: coreApiUrl, token: coreApiToken });
+  }, [aiRuntimeMode, coreApiUrl, coreApiToken]);
 
   useEffect(() => {
     if (aiRuntimeMode === 'core' && !coreCanRun) {
       setAiRuntimeMode('demo');
     }
   }, [aiRuntimeMode, coreCanRun]);
+
+  async function signInToCorePilot() {
+    const inviteCode = coreInviteCode.trim();
+    if (!inviteCode) {
+      setCoreStatus({ state: 'error', message: 'Enter a pilot invite code before enabling Core AI.' });
+      return;
+    }
+
+    setCoreStatus({ state: 'loading', message: 'Creating secure pilot session...' });
+    try {
+      const session = await createCorePilotSession({
+        baseUrl: coreApiUrl,
+        inviteCode,
+        userLabel: 'InspectorAI pilot'
+      });
+      setCoreApiToken(session.token);
+      setCoreInviteCode('');
+      setAiRuntimeMode('core');
+      setCoreStatus({
+        state: 'ready',
+        message: `Pilot session active${session.expiresAt ? ` until ${new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`
+      });
+    } catch (error) {
+      setCoreStatus({
+        state: 'error',
+        message: `Pilot sign-in failed. ${error.message}`
+      });
+    }
+  }
 
   useEffect(() => {
     if (!coreMode || !activeChecklistItem) return undefined;
@@ -1866,6 +1898,7 @@ function App() {
 
     inspectionAssistCore({
       baseUrl: coreApiUrl,
+      token: coreApiToken,
       jurisdictionId: coreJurisdictionId,
       item,
       status: checklistStatuses[item.id] ?? '',
@@ -1887,7 +1920,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeChecklistItem, checklistStatuses, coreApiUrl, coreJurisdictionId, coreMode, violationDetails]);
+  }, [activeChecklistItem, checklistStatuses, coreApiToken, coreApiUrl, coreJurisdictionId, coreMode, violationDetails]);
 
   async function ask(nextQuery = query) {
     const trimmed = nextQuery.trim();
@@ -1898,6 +1931,7 @@ function App() {
       try {
         const result = await askCoreApprovedSources({
           baseUrl: coreApiUrl,
+          token: coreApiToken,
           query: trimmed,
           jurisdiction,
           jurisdictionId: coreJurisdictionId
@@ -2250,6 +2284,7 @@ function App() {
         const details = violationDetails[item.id] ?? {};
         const result = await askCoreApprovedSources({
           baseUrl: coreApiUrl,
+          token: coreApiToken,
           jurisdiction,
           jurisdictionId: coreJurisdictionId,
           query: `${item.number}${item.letter ?? ''} ${item.short}. Inspector question: ${question}. Current observation: ${details.commentText ?? ''}`
@@ -2905,6 +2940,30 @@ function App() {
                           placeholder={DEFAULT_CORE_API_URL}
                         />
                       </label>
+                      <label>
+                        <span>Pilot invite</span>
+                        <input
+                          type="password"
+                          value={coreInviteCode}
+                          onChange={(event) => setCoreInviteCode(event.target.value)}
+                          placeholder="Enter private pilot code"
+                        />
+                      </label>
+                      <button className="ghost-button" type="button" onClick={signInToCorePilot}>
+                        <ShieldCheck size={17} />
+                        Sign in to Core
+                      </button>
+                      {coreApiToken && (
+                        <label>
+                          <span>Pilot session</span>
+                          <input
+                            type="password"
+                            value={coreApiToken}
+                            onChange={(event) => setCoreApiToken(event.target.value)}
+                            placeholder="Signed session token"
+                          />
+                        </label>
+                      )}
                       <p>
                         {coreMode
                           ? coreStatus.message || 'Core mode calls InspectorAI-Core for Ask and item-level AI Assist.'
