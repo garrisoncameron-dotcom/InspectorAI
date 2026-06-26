@@ -72,6 +72,20 @@ function displayStatus(status) {
   return status.toLowerCase() === 'unsupported' ? 'Unsupported' : status;
 }
 
+function friendlyCoreError(status, detail = {}) {
+  const raw = detail.message || detail.error || '';
+  if (/insufficient_quota|quota|billing/i.test(raw)) {
+    return 'Core AI billing or quota is not available. Demo guidance is still active.';
+  }
+  if (/OPENAI_API_KEY|api key/i.test(raw)) {
+    return 'Core AI is missing a valid provider key. Demo guidance is still active.';
+  }
+  if (/OpenAI Responses request failed|OpenAI-compatible request failed|Ollama request failed/i.test(raw)) {
+    return 'Core AI provider is unavailable right now. Demo guidance is still active.';
+  }
+  return raw || `InspectorAI Core returned ${status}`;
+}
+
 async function postCore(baseUrl, path, body, token = '') {
   const headers = { 'content-type': 'application/json' };
   if (token) headers.authorization = `Bearer ${token}`;
@@ -84,8 +98,7 @@ async function postCore(baseUrl, path, body, token = '') {
 
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
-    const message = detail.message || detail.error || `InspectorAI Core returned ${response.status}`;
-    throw new Error(`InspectorAI Core returned ${response.status}: ${message}`);
+    throw new Error(friendlyCoreError(response.status, detail));
   }
 
   return response.json();
@@ -141,6 +154,33 @@ export async function inspectionAssistCore({ baseUrl, token = '', jurisdictionId
       response.status?.toLowerCase() === 'unsupported'
         ? 'Core could not map this item to an approved citation. Use supervisor review before relying on AI guidance.'
         : 'Core returned approved-source guidance. Document observed condition, location, measurement if applicable, corrective action, and whether correction occurred.',
+    runtime: 'core',
+    validation: response.validation ?? null,
+    audit: payload.audit ?? null
+  };
+}
+
+export async function photoAssistCore({ baseUrl, token = '', jurisdictionId, imageDataUrl, context = '' }) {
+  const payload = await postCore(baseUrl, '/v1/photo-assist', {
+    jurisdictionId,
+    imageDataUrl,
+    context
+  }, token);
+  const response = payload.response ?? {};
+
+  return {
+    title: response.title ?? 'AI photo review',
+    summary: response.summary || response.answer || 'Photo reviewed. Confirm facts in the field before citing.',
+    findings: (response.findings ?? []).map((finding, index) => ({
+      label: finding.label || `Photo finding ${index + 1}`,
+      risk: finding.risk || 'Possible inspection concern visible in the uploaded image.',
+      verification: finding.verification || 'Confirm the condition in person before citing.',
+      topic: finding.topic || 'Evidence capture',
+      confidence: finding.confidence || 'low',
+      evidence: mapCoreEvidence(response.citations)
+    })),
+    limitations: response.limitations ?? [],
+    evidence: mapCoreEvidence(response.citations),
     runtime: 'core',
     validation: response.validation ?? null,
     audit: payload.audit ?? null
