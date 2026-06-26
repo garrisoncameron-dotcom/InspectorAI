@@ -1,7 +1,7 @@
 const CORE_SETTINGS_KEY = 'inspectaid.coreAiSettings';
 
 export const CONFIGURED_CORE_API_URL = import.meta.env.VITE_INSPECTORAI_CORE_URL || '';
-export const DEFAULT_CORE_API_URL = CONFIGURED_CORE_API_URL || 'http://127.0.0.1:8787';
+export const DEFAULT_CORE_API_URL = CONFIGURED_CORE_API_URL || 'https://inspectorai-core.onrender.com';
 
 export function coreControlsEnabled() {
   if (typeof window === 'undefined') return false;
@@ -24,7 +24,7 @@ export function jurisdictionIdForName(jurisdictionName, fallback = 'gwinnett-ga'
 
 export function getStoredCoreSettings() {
   if (typeof window === 'undefined') {
-    return { mode: 'demo', baseUrl: DEFAULT_CORE_API_URL };
+    return { mode: 'demo', baseUrl: DEFAULT_CORE_API_URL, token: '' };
   }
 
   try {
@@ -32,10 +32,11 @@ export function getStoredCoreSettings() {
     const coreAllowed = coreControlsEnabled() || Boolean(CONFIGURED_CORE_API_URL);
     return {
       mode: stored.mode === 'core' && coreAllowed ? 'core' : 'demo',
-      baseUrl: stored.baseUrl || DEFAULT_CORE_API_URL
+      baseUrl: stored.baseUrl || DEFAULT_CORE_API_URL,
+      token: stored.token || ''
     };
   } catch {
-    return { mode: 'demo', baseUrl: DEFAULT_CORE_API_URL };
+    return { mode: 'demo', baseUrl: DEFAULT_CORE_API_URL, token: '' };
   }
 }
 
@@ -71,10 +72,13 @@ function displayStatus(status) {
   return status.toLowerCase() === 'unsupported' ? 'Unsupported' : status;
 }
 
-async function postCore(baseUrl, path, body) {
+async function postCore(baseUrl, path, body, token = '') {
+  const headers = { 'content-type': 'application/json' };
+  if (token) headers.authorization = `Bearer ${token}`;
+
   const response = await fetch(`${normalizeBaseUrl(baseUrl)}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify(body)
   });
 
@@ -85,8 +89,16 @@ async function postCore(baseUrl, path, body) {
   return response.json();
 }
 
-export async function askCoreApprovedSources({ baseUrl, query, jurisdiction, jurisdictionId }) {
-  const payload = await postCore(baseUrl, '/v1/ask', { query, jurisdictionId });
+export async function createCorePilotSession({ baseUrl, inviteCode, userLabel = 'InspectorAI pilot' }) {
+  const payload = await postCore(baseUrl, '/v1/auth/pilot-login', { inviteCode, userLabel });
+  return {
+    token: payload.token,
+    expiresAt: payload.expiresAt
+  };
+}
+
+export async function askCoreApprovedSources({ baseUrl, token = '', query, jurisdiction, jurisdictionId }) {
+  const payload = await postCore(baseUrl, '/v1/ask', { query, jurisdictionId }, token);
   const response = payload.response ?? {};
 
   return {
@@ -107,7 +119,7 @@ export async function askCoreApprovedSources({ baseUrl, query, jurisdiction, jur
   };
 }
 
-export async function inspectionAssistCore({ baseUrl, jurisdictionId, item, status, observedFacts = '' }) {
+export async function inspectionAssistCore({ baseUrl, token = '', jurisdictionId, item, status, observedFacts = '' }) {
   const payload = await postCore(baseUrl, '/v1/inspection-assist', {
     jurisdictionId,
     checklistItemId: item.id,
@@ -115,7 +127,7 @@ export async function inspectionAssistCore({ baseUrl, jurisdictionId, item, stat
     checklistItemLabel: item.short,
     status,
     observedFacts
-  });
+  }, token);
   const response = payload.response ?? {};
   const evidence = mapCoreEvidence(response.citations);
 
