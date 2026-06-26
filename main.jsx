@@ -43,6 +43,7 @@ import {
   createCorePilotSession,
   coreControlsEnabled,
   coreRuntimeAvailable,
+  getCoreSessionInfo,
   getStoredCoreSettings,
   inspectionAssistCore,
   jurisdictionIdForName,
@@ -1820,7 +1821,18 @@ function App() {
   const sourceCoverage = sourceCoverageForDocs(activeSourceDocs);
   const coreJurisdictionId = jurisdictionIdForName(jurisdiction, activeDepartmentId);
   const coreCanRun = coreRuntimeAvailable(coreApiUrl);
-  const coreHasSession = Boolean(coreApiToken.trim());
+  const coreSessionInfo = useMemo(() => getCoreSessionInfo(coreApiToken.trim()), [coreApiToken]);
+  const coreSessionExpired = coreSessionInfo.status === 'expired';
+  const coreHasSession = Boolean(coreApiToken.trim()) && !coreSessionExpired;
+  const coreSessionExpiresAt =
+    coreSessionInfo.expiresAt
+      ? new Date(coreSessionInfo.expiresAt).toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      : '';
   const coreMode = aiRuntimeMode === 'core' && coreCanRun && coreHasSession;
   const photoFeedbackCount = Object.values(photoFeedbackByFinding).filter((feedback) => feedback.decision).length;
   const photoReviewStats = useMemo(() => {
@@ -1924,6 +1936,11 @@ function App() {
   }, [aiRuntimeMode, coreApiUrl, coreApiToken]);
 
   useEffect(() => {
+    if (!coreSessionExpired) return;
+    clearCoreSession('Core session expired. Paste the pilot invite code and reconnect.');
+  }, [coreSessionExpired]);
+
+  useEffect(() => {
     if (aiRuntimeMode === 'core' && (!coreCanRun || !coreHasSession)) {
       setAiRuntimeMode('demo');
       if (!coreHasSession) {
@@ -1934,6 +1951,29 @@ function App() {
       }
     }
   }, [aiRuntimeMode, coreCanRun, coreHasSession]);
+
+  function clearCoreSession(message = 'Core session cleared. Paste the pilot invite code to reconnect.') {
+    setCoreApiToken('');
+    setCoreAssistByItem({});
+    setAiRuntimeMode('demo');
+    setCoreStatus({ state: 'error', message });
+  }
+
+  function coreSessionFailure(error) {
+    return /session|pilot access|sign in/i.test(error?.message ?? '');
+  }
+
+  function reportCoreFailure(prefix, error, fallback = 'Demo guidance is still active.') {
+    if (coreSessionFailure(error)) {
+      clearCoreSession('Core session expired or is no longer valid. Paste the pilot invite code and reconnect.');
+      return;
+    }
+
+    setCoreStatus({
+      state: 'error',
+      message: `${prefix} ${fallback} ${error.message}`
+    });
+  }
 
   function enableCoreRuntime() {
     if (!coreCanRun) {
@@ -1969,7 +2009,7 @@ function App() {
       setAiRuntimeMode('core');
       setCoreStatus({
         state: 'ready',
-        message: `Core AI connected. Pilot session active${session.expiresAt ? ` until ${new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`
+        message: `Core AI connected. Pilot session active${session.expiresAt ? ` until ${new Date(session.expiresAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}.`
       });
     } catch (error) {
       setCoreStatus({
@@ -2000,10 +2040,7 @@ function App() {
       })
       .catch((error) => {
         if (cancelled) return;
-        setCoreStatus({
-          state: 'error',
-          message: `Core unavailable. Demo guidance is still active. ${error.message}`
-        });
+        reportCoreFailure('Core unavailable.', error);
       });
 
     return () => {
@@ -2030,10 +2067,7 @@ function App() {
         setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
         return;
       } catch (error) {
-        setCoreStatus({
-          state: 'error',
-          message: `Core unavailable. Falling back to demo answer. ${error.message}`
-        });
+        reportCoreFailure('Core unavailable.', error, 'Falling back to demo answer.');
       }
     }
 
@@ -2203,10 +2237,7 @@ function App() {
         setCoreStatus({ state: 'ready', message: 'InspectorAI Core photo review complete.' });
         return;
       } catch (error) {
-        setCoreStatus({
-          state: 'error',
-          message: `Photo Aid is using demo prompts. ${error.message}`
-        });
+        reportCoreFailure('Photo Aid could not reach Core.', error, 'Demo prompts are still active.');
       }
     }
 
@@ -2605,10 +2636,7 @@ function App() {
         setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
         return result.body;
       } catch (error) {
-        setCoreStatus({
-          state: 'error',
-          message: `Core unavailable for violation chat. Demo guidance is still active. ${error.message}`
-        });
+        reportCoreFailure('Core unavailable for violation chat.', error);
       }
     }
 
@@ -3268,10 +3296,22 @@ function App() {
                           placeholder="Not the OpenAI API key"
                         />
                       </label>
-                      <button className="ghost-button" type="button" onClick={signInToCorePilot}>
-                        <ShieldCheck size={17} />
-                        Sign in to Core
-                      </button>
+                      <div className="runtime-actions">
+                        <button className="ghost-button" type="button" onClick={signInToCorePilot}>
+                          <ShieldCheck size={17} />
+                          {coreApiToken ? 'Reconnect Core' : 'Sign in to Core'}
+                        </button>
+                        {coreApiToken && (
+                          <button
+                            className="ghost-button danger-lite"
+                            type="button"
+                            onClick={() => clearCoreSession()}
+                          >
+                            <X size={17} />
+                            Clear session
+                          </button>
+                        )}
+                      </div>
                       {coreApiToken && (
                         <label>
                           <span>Pilot session</span>
@@ -3285,8 +3325,11 @@ function App() {
                       )}
                       <p>
                         {coreMode
-                          ? coreStatus.message || 'Core mode calls InspectorAI-Core for Ask and item-level AI Assist.'
-                          : coreStatus.message || 'Public demo mode remains active. Paste the Render pilot invite code to use Core AI. The OpenAI API key stays hidden on the server.'}
+                          ? coreStatus.message || `Core mode is connected${coreSessionExpiresAt ? ` until ${coreSessionExpiresAt}` : ''}.`
+                          : coreStatus.message ||
+                            (coreHasSession
+                              ? `Pilot session is ready${coreSessionExpiresAt ? ` until ${coreSessionExpiresAt}` : ''}. Tap Core AI when you want live assistance.`
+                              : 'Public demo mode remains active. Paste the Render pilot invite code to use Core AI. The OpenAI API key stays hidden on the server.')}
                       </p>
                     </div>
                   )}
