@@ -30,9 +30,13 @@ export function getStoredCoreSettings() {
   try {
     const stored = JSON.parse(window.localStorage.getItem(CORE_SETTINGS_KEY) || '{}');
     const coreAllowed = coreControlsEnabled() || Boolean(CONFIGURED_CORE_API_URL);
+    const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const storedBaseUrl = stored.baseUrl || DEFAULT_CORE_API_URL;
+    const localDevUrlSaved = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(storedBaseUrl);
+    const baseUrl = !isLocalHost && localDevUrlSaved ? DEFAULT_CORE_API_URL : storedBaseUrl;
     return {
       mode: stored.mode === 'core' && coreAllowed ? 'core' : 'demo',
-      baseUrl: stored.baseUrl || DEFAULT_CORE_API_URL,
+      baseUrl,
       token: stored.token || ''
     };
   } catch {
