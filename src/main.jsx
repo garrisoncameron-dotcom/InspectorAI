@@ -23,6 +23,7 @@ import {
   MessageSquareText,
   Mic,
   Moon,
+  Paperclip,
   Plus,
   PenLine,
   Radio,
@@ -612,6 +613,12 @@ const PHOTO_REVIEW_STATUS = {
   reviewed: 'Reviewed',
   training: 'Training approved',
   followup: 'Needs follow-up'
+};
+
+const ATTACHMENT_SOURCE_LABELS = {
+  camera: 'Camera',
+  roll: 'Camera roll',
+  file: 'File'
 };
 
 function loadPhotoFeedbackQueue() {
@@ -1326,15 +1333,26 @@ function buildInspectionCsv(record) {
       violation.correctiveAction
     ]),
     [],
-    ['temperature_readings'],
-    ['location', 'item', 'temperature', 'standard'],
-    ...record.temperatureReadings.map((reading) => [
-      reading.location,
-      reading.item,
-      reading.temperature,
-      `${reading.standardLabel} ${reading.limitLabel}`
-    ])
-  ];
+	    ['temperature_readings'],
+	    ['location', 'item', 'temperature', 'standard'],
+	    ...record.temperatureReadings.map((reading) => [
+	      reading.location,
+	      reading.item,
+	      reading.temperature,
+	      `${reading.standardLabel} ${reading.limitLabel}`
+	    ]),
+	    [],
+	    ['attachments'],
+	    ['name', 'type', 'source', 'captured_at', 'size', 'ai_reviewed'],
+	    ...(record.attachments ?? []).map((attachment) => [
+	      attachment.name,
+	      attachment.type,
+	      attachment.sourceLabel,
+	      attachment.capturedAt,
+	      attachment.sizeLabel,
+	      attachment.aiReviewed ? 'yes' : 'no'
+	    ])
+	  ];
   return rows.map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
 }
 
@@ -1693,6 +1711,8 @@ function App() {
   const [photoFeedbackByFinding, setPhotoFeedbackByFinding] = useState({});
   const [photoFeedbackQueue, setPhotoFeedbackQueue] = useState(() => loadPhotoFeedbackQueue());
   const [photoReviewModalEntry, setPhotoReviewModalEntry] = useState(null);
+  const [inspectionAttachments, setInspectionAttachments] = useState([]);
+  const [pendingAttachmentPrompt, setPendingAttachmentPrompt] = useState(null);
   const [listening, setListening] = useState(false);
   const [activeFeature, setActiveFeature] = useState('ask');
   const [checklistStatuses, setChecklistStatuses] = useState({});
@@ -1741,6 +1761,9 @@ function App() {
   const [selectedTemplatePointId, setSelectedTemplatePointId] = useState(DEFAULT_TEMPLATE_POINTS[0]?.id ?? null);
   const [savedTemplateProfile, setSavedTemplateProfile] = useState(null);
   const recognitionRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const cameraRollInputRef = useRef(null);
+  const fileAttachmentInputRef = useRef(null);
 
   const jurisdictions = useMemo(() => ['All jurisdictions', ...new Set(APPROVED_DOCS.map((doc) => doc.jurisdiction))], []);
   const activeDepartment = HEALTH_DEPARTMENTS.find((department) => department.id === activeDepartmentId) ?? HEALTH_DEPARTMENTS[0];
@@ -2134,6 +2157,41 @@ function App() {
     persistPhotoFeedbackQueue(photoFeedbackQueue.filter((item) => item.id !== id));
   }
 
+  async function runPhotoAnalysis(name, imageDataUrl) {
+    const reviewImageUrl = await createPhotoReviewSnapshot(imageDataUrl);
+    setPhotoName(name);
+    setPhotoSummary('');
+    setPhotoFindings([]);
+    setPhotoFeedbackByFinding({});
+    setPhotoPreviewUrl(imageDataUrl);
+    setPhotoReviewImageUrl(reviewImageUrl);
+
+    if (coreMode) {
+      try {
+        setCoreStatus({ state: 'loading', message: 'InspectorAI Core is reviewing the photo...' });
+        const review = await photoAssistCore({
+          baseUrl: coreApiUrl,
+          token: coreApiToken,
+          jurisdictionId: coreJurisdictionId,
+          imageDataUrl,
+          context: `Jurisdiction: ${jurisdiction}. Inspector uploaded ${name}. Return conservative photo review prompts.`
+        });
+        setPhotoSummary(review.summary);
+        setPhotoFindings(review.findings.length ? review.findings : PHOTO_SIGNALS.slice(0, 3));
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core photo review complete.' });
+        return;
+      } catch (error) {
+        setCoreStatus({
+          state: 'error',
+          message: `Photo Aid is using demo prompts. ${error.message}`
+        });
+      }
+    }
+
+    setPhotoSummary('Demo Photo Aid prompts are shown until Core photo review is available.');
+    setPhotoFindings(PHOTO_SIGNALS.filter((_, index) => index < 3));
+  }
+
   function updatePhotoFindingFeedback(index, finding, patch) {
     const id = photoFindingFeedbackKey(finding, index);
     setPhotoFeedbackByFinding((current) => {
@@ -2163,41 +2221,80 @@ function App() {
   async function handlePhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    setPhotoName(file.name);
-    setPhotoSummary('');
-    setPhotoFindings([]);
-    setPhotoFeedbackByFinding({});
-    setPhotoReviewImageUrl('');
-
     try {
       const imageDataUrl = await readFileAsDataUrl(file);
-      const reviewImageUrl = await createPhotoReviewSnapshot(imageDataUrl);
-      setPhotoPreviewUrl(imageDataUrl);
-      setPhotoReviewImageUrl(reviewImageUrl);
-
-      if (coreMode) {
-        setCoreStatus({ state: 'loading', message: 'InspectorAI Core is reviewing the photo...' });
-        const review = await photoAssistCore({
-          baseUrl: coreApiUrl,
-          token: coreApiToken,
-          jurisdictionId: coreJurisdictionId,
-          imageDataUrl,
-          context: `Jurisdiction: ${jurisdiction}. Inspector uploaded ${file.name}. Return conservative photo review prompts.`
-        });
-        setPhotoSummary(review.summary);
-        setPhotoFindings(review.findings.length ? review.findings : PHOTO_SIGNALS.slice(0, 3));
-        setCoreStatus({ state: 'ready', message: 'InspectorAI Core photo review complete.' });
-        return;
-      }
+      await runPhotoAnalysis(file.name, imageDataUrl);
     } catch (error) {
       setCoreStatus({
         state: 'error',
         message: `Photo Aid is using demo prompts. ${error.message}`
       });
+      setPhotoSummary('Demo Photo Aid prompts are shown until Core photo review is available.');
+      setPhotoFindings(PHOTO_SIGNALS.filter((_, index) => index < 3));
+    } finally {
+      event.target.value = '';
     }
+  }
 
-    setPhotoSummary('Demo Photo Aid prompts are shown until Core photo review is available.');
-    setPhotoFindings(PHOTO_SIGNALS.filter((_, index) => index < 3));
+  function formatAttachmentSize(bytes) {
+    if (!bytes) return '0 KB';
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function handleInspectionAttachment(event, source) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const isImage = file.type.startsWith('image/');
+      const previewUrl = isImage ? await createPhotoReviewSnapshot(dataUrl) : '';
+      const attachment = {
+        id: crypto.randomUUID(),
+        name: file.name || `${ATTACHMENT_SOURCE_LABELS[source]} attachment`,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        sizeLabel: formatAttachmentSize(file.size),
+        source,
+        sourceLabel: ATTACHMENT_SOURCE_LABELS[source] ?? 'Attachment',
+        isImage,
+        dataUrl,
+        previewUrl,
+        aiReviewed: false,
+        capturedAt: new Date().toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
+        }),
+        createdAt: new Date().toISOString()
+      };
+      setInspectionAttachments((current) => [attachment, ...current].slice(0, 40));
+      if (isImage) setPendingAttachmentPrompt(attachment);
+    } catch (error) {
+      setCoreStatus({ state: 'error', message: `Attachment could not be saved. ${error.message}` });
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  function removeInspectionAttachment(attachmentId) {
+    setInspectionAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+    if (pendingAttachmentPrompt?.id === attachmentId) setPendingAttachmentPrompt(null);
+  }
+
+  function dismissAttachmentAiPrompt() {
+    setPendingAttachmentPrompt(null);
+  }
+
+  async function analyzeInspectionAttachment(attachment = pendingAttachmentPrompt) {
+    if (!attachment) return;
+    setInspectionAttachments((current) =>
+      current.map((item) => (item.id === attachment.id ? { ...item, aiReviewed: true } : item))
+    );
+    setPendingAttachmentPrompt(null);
+    setActiveFeature('photo');
+    await runPhotoAnalysis(attachment.name, attachment.dataUrl);
   }
 
   function markChecklistItem(item, status) {
@@ -2441,11 +2538,12 @@ function App() {
         category: item.category,
         status: checklistStatuses[item.id] || ''
       })),
-      counts: checklistCounts,
-      violations,
-      temperatureReadings
-    };
-  }
+	      counts: checklistCounts,
+	      violations,
+	      temperatureReadings,
+	      attachments: inspectionAttachments
+	    };
+	  }
 
   function saveInspectionRecord(record) {
     const stored = JSON.parse(window.localStorage.getItem('inspectaid.inspectionRecords') || '[]');
@@ -3307,10 +3405,11 @@ function App() {
                           event.target.value = '';
                         }}
                       >
-                        <option value="">Jump to</option>
-                        <option value="temperature-readings-section">Temps</option>
-                        <option value="finalize-inspection-section">Wrap up</option>
-                      </select>
+	                        <option value="">Jump to</option>
+	                        <option value="temperature-readings-section">Temps</option>
+	                        <option value="inspection-attachments-section">Attachments</option>
+	                        <option value="finalize-inspection-section">Wrap up</option>
+	                      </select>
                       <ChevronDown size={16} />
                     </label>
                     <div className="checklist-filter-tabs" aria-label="Checklist work queue filter">
@@ -3324,12 +3423,15 @@ function App() {
                           {filter.label}
                         </button>
                       ))}
-                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('temperature-readings-section')}>
-                        Temps
-                      </button>
-                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('finalize-inspection-section')}>
-                        Wrap up
-                      </button>
+	                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('temperature-readings-section')}>
+	                        Temps
+	                      </button>
+	                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('inspection-attachments-section')}>
+	                        Attach
+	                      </button>
+	                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('finalize-inspection-section')}>
+	                        Wrap up
+	                      </button>
                     </div>
                   </div>
                 </div>
@@ -3518,22 +3620,95 @@ function App() {
                     </div>
                   ) : (
                     <p className="muted">Saved temperatures will appear in the report preview under Temperature Observations.</p>
-                  )}
-                </section>
-
-                <section className="finalize-panel" id="finalize-inspection-section" aria-label="Finalize inspection">
-                  <div>
-                    <span className="premium-badge"><FileCheck2 size={15} /> Inspection closeout</span>
+	                  )}
+	                </section>
+	
+	                <section className="attachment-panel" id="inspection-attachments-section" aria-label="Inspection attachments">
+	                  <div className="temperature-head">
+	                    <div>
+	                      <span className="premium-badge"><Paperclip size={15} /> Attachments</span>
+	                      <h3>Inspection evidence</h3>
+	                    </div>
+	                    <strong>{inspectionAttachments.length}</strong>
+	                  </div>
+	                  <div className="attachment-actions">
+	                    <button type="button" onClick={() => cameraInputRef.current?.click()}>
+	                      <Camera size={18} />
+	                      Camera
+	                    </button>
+	                    <button type="button" onClick={() => cameraRollInputRef.current?.click()}>
+	                      <FileSearch size={18} />
+	                      Camera roll
+	                    </button>
+	                    <button type="button" onClick={() => fileAttachmentInputRef.current?.click()}>
+	                      <Upload size={18} />
+	                      File
+	                    </button>
+	                    <input
+	                      ref={cameraInputRef}
+	                      type="file"
+	                      accept="image/*"
+	                      capture="environment"
+	                      onChange={(event) => handleInspectionAttachment(event, 'camera')}
+	                    />
+	                    <input
+	                      ref={cameraRollInputRef}
+	                      type="file"
+	                      accept="image/*"
+	                      onChange={(event) => handleInspectionAttachment(event, 'roll')}
+	                    />
+	                    <input
+	                      ref={fileAttachmentInputRef}
+	                      type="file"
+	                      accept="image/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
+	                      onChange={(event) => handleInspectionAttachment(event, 'file')}
+	                    />
+	                  </div>
+	                  {inspectionAttachments.length ? (
+	                    <div className="attachment-list">
+	                      {inspectionAttachments.map((attachment) => (
+	                        <article key={attachment.id}>
+	                          {attachment.previewUrl ? (
+	                            <img src={attachment.previewUrl} alt={attachment.name} />
+	                          ) : (
+	                            <span className="attachment-file-icon"><Paperclip size={18} /></span>
+	                          )}
+	                          <div>
+	                            <strong>{attachment.name}</strong>
+	                            <small>{attachment.sourceLabel} · {attachment.sizeLabel} · {attachment.capturedAt}</small>
+	                            <small>{attachment.aiReviewed ? 'AI Assist reviewed' : attachment.isImage ? 'Attached without AI review' : 'File attached'}</small>
+	                          </div>
+	                          {attachment.isImage && (
+	                            <button type="button" onClick={() => analyzeInspectionAttachment(attachment)}>
+	                              <Sparkles size={15} />
+	                              AI Assist
+	                            </button>
+	                          )}
+	                          <button type="button" onClick={() => removeInspectionAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`}>
+	                            <X size={16} />
+	                          </button>
+	                        </article>
+	                      ))}
+	                    </div>
+	                  ) : (
+	                    <p className="muted">Attach photos, files, or field evidence to this draft inspection. Photos can optionally be sent to Photo Aid for AI review.</p>
+	                  )}
+	                </section>
+	
+	                <section className="finalize-panel" id="finalize-inspection-section" aria-label="Finalize inspection">
+	                  <div>
+	                    <span className="premium-badge"><FileCheck2 size={15} /> Inspection closeout</span>
                     <h3>Finalize inspection</h3>
                     <p>
                       Collect final report details, capture operator and inspector signatures, save the inspection record, and generate the filled report PDF.
                     </p>
                   </div>
-                  <div className="finalize-summary">
-                    <span>{reportViolations.length} OUT</span>
-                    <span>{temperatureReadings.length} temps</span>
-                    <span>{finalizedRecord ? 'Finalized' : 'Draft'}</span>
-                  </div>
+	                  <div className="finalize-summary">
+	                    <span>{reportViolations.length} OUT</span>
+	                    <span>{temperatureReadings.length} temps</span>
+	                    <span>{inspectionAttachments.length} files</span>
+	                    <span>{finalizedRecord ? 'Finalized' : 'Draft'}</span>
+	                  </div>
                   <button
                     className="send-button finalize-button"
                     type="button"
@@ -4357,11 +4532,46 @@ function App() {
                 </button>
               )}
             </div>
-          </section>
-        </div>
-      )}
-      {temperatureViolationPrompt && (
-        <div className="modal-backdrop" role="presentation">
+	          </section>
+	        </div>
+	      )}
+	      {pendingAttachmentPrompt && (
+	        <div className="modal-backdrop" role="presentation">
+	          <section className="violation-modal attachment-ai-modal" role="dialog" aria-modal="true" aria-labelledby="attachment-ai-title">
+	            <div className="modal-header">
+	              <div>
+	                <span className="premium-badge">
+	                  <Paperclip size={15} />
+	                  Photo attached
+	                </span>
+	                <h2 id="attachment-ai-title">Do you want AI Assist analyzing this photo?</h2>
+	                <p>{pendingAttachmentPrompt.name} is saved to this inspection file either way.</p>
+	              </div>
+	              <button className="icon-button" type="button" aria-label="Close photo AI prompt" onClick={dismissAttachmentAiPrompt}>
+	                <X size={20} />
+	              </button>
+	            </div>
+	            <div className="attachment-ai-preview">
+	              {pendingAttachmentPrompt.previewUrl && <img src={pendingAttachmentPrompt.previewUrl} alt={pendingAttachmentPrompt.name} />}
+	              <div>
+	                <strong>{pendingAttachmentPrompt.sourceLabel}</strong>
+	                <span>{pendingAttachmentPrompt.sizeLabel} · {pendingAttachmentPrompt.capturedAt}</span>
+	              </div>
+	            </div>
+	            <div className="modal-actions">
+	              <button className="ghost-button" type="button" onClick={dismissAttachmentAiPrompt}>
+	                Attach only
+	              </button>
+	              <button className="send-button modal-save" type="button" onClick={() => analyzeInspectionAttachment()}>
+	                <Sparkles size={18} />
+	                Run AI Assist
+	              </button>
+	            </div>
+	          </section>
+	        </div>
+	      )}
+	      {temperatureViolationPrompt && (
+	        <div className="modal-backdrop" role="presentation">
           <section className="violation-modal temperature-alert-modal" role="dialog" aria-modal="true" aria-labelledby="temperature-alert-title">
             <div className="modal-header">
               <div>
@@ -4496,10 +4706,11 @@ function App() {
                   />
                 </label>
                 <div className="finalize-readiness wide">
-                  <div><strong>{CHECKLIST_ITEMS.length - checklistCounts.blank}</strong><span>Checklist items marked</span></div>
-                  <div><strong>{reportViolations.length}</strong><span>OUT violations</span></div>
-                  <div><strong>{temperatureReadings.length}</strong><span>Temperature readings</span></div>
-                </div>
+	                  <div><strong>{CHECKLIST_ITEMS.length - checklistCounts.blank}</strong><span>Checklist items marked</span></div>
+	                  <div><strong>{reportViolations.length}</strong><span>OUT violations</span></div>
+	                  <div><strong>{temperatureReadings.length}</strong><span>Temperature readings</span></div>
+	                  <div><strong>{inspectionAttachments.length}</strong><span>Attachments saved</span></div>
+	                </div>
               </div>
             ) : (
               <div className="signature-stage">

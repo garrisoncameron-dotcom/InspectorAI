@@ -641,11 +641,12 @@ h1 {
 
 .inspection-header,
 .inspection-metrics,
-.inspection-layout,
-.inspection-item,
-.temperature-panel,
-.finalize-panel,
-.assist-panel {
+	.inspection-layout,
+	.inspection-item,
+	.temperature-panel,
+	.attachment-panel,
+	.finalize-panel,
+	.assist-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255,255,255,0.88);
@@ -741,10 +742,11 @@ h1 {
   color: var(--blue);
 }
 
-#temperature-readings-section,
-#finalize-inspection-section {
-  scroll-margin-top: 150px;
-}
+	#temperature-readings-section,
+	#inspection-attachments-section,
+	#finalize-inspection-section {
+	  scroll-margin-top: 150px;
+	}
 
 .premium-badge,
 .assist-badge {
@@ -821,7 +823,8 @@ h1 {
   background: #f4fbf8;
 }
 
-.temperature-panel {
+.temperature-panel,
+.attachment-panel {
   display: grid;
   gap: 14px;
   padding: 16px;
@@ -940,6 +943,90 @@ h1 {
   border-radius: 8px;
   background: white;
   color: var(--muted);
+}
+
+.attachment-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.attachment-actions input {
+  display: none;
+}
+
+.attachment-actions button {
+  min-height: 64px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #bfd2ca;
+  border-radius: 8px;
+  background: white;
+  color: var(--green);
+  font-weight: 850;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.attachment-list article {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) auto 36px;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 9px;
+}
+
+.attachment-list img,
+.attachment-file-icon {
+  width: 74px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.attachment-file-icon {
+  display: grid;
+  place-items: center;
+  color: var(--blue);
+}
+
+.attachment-list strong,
+.attachment-list small {
+  display: block;
+}
+
+.attachment-list small {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.attachment-list button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--blue);
+  padding: 0 10px;
+  font-weight: 800;
+}
+
+.attachment-list button:last-child {
+  color: var(--red);
+  padding: 0;
 }
 
 .finalize-panel {
@@ -1240,6 +1327,35 @@ h1 {
 .temperature-alert-summary span {
   margin-top: 4px;
   line-height: 1.35;
+}
+
+.attachment-ai-preview {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.attachment-ai-preview img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.attachment-ai-preview strong,
+.attachment-ai-preview span {
+  display: block;
+}
+
+.attachment-ai-preview span {
+  margin-top: 4px;
+  color: var(--muted);
 }
 
 .finalize-modal {
@@ -3494,7 +3610,9 @@ textarea {
 	  .runtime-panel,
 	  .temperature-entry,
 	  .finalize-panel,
-  .template-toolbar,
+	  .attachment-list article,
+	  .attachment-ai-preview,
+	  .template-toolbar,
   .template-workbench,
   .config-hero,
   .department-grid,
@@ -3663,10 +3781,11 @@ textarea {
     padding: 0 12px;
   }
 
-  #temperature-readings-section,
-  #finalize-inspection-section {
-    scroll-margin-top: 252px;
-  }
+	  #temperature-readings-section,
+	  #inspection-attachments-section,
+	  #finalize-inspection-section {
+	    scroll-margin-top: 252px;
+	  }
 
   .inspection-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3706,9 +3825,31 @@ textarea {
     border-left: 0;
   }
 
-  .temperature-panel {
-    padding: 12px;
-  }
+	  .temperature-panel,
+	  .attachment-panel {
+	    padding: 12px;
+	  }
+
+	  .attachment-actions {
+	    grid-template-columns: 1fr;
+	  }
+
+	  .attachment-actions button {
+	    min-height: 48px;
+	  }
+
+	  .attachment-list article {
+	    grid-template-columns: 64px minmax(0, 1fr) 36px;
+	  }
+
+	  .attachment-list img,
+	  .attachment-file-icon {
+	    width: 64px;
+	  }
+
+	  .attachment-list article button:not(:last-child) {
+	    grid-column: 1 / -1;
+	  }
 
   .template-toolbar {
     gap: 8px;
