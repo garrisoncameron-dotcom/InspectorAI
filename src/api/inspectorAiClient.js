@@ -78,6 +78,15 @@ function displayStatus(status) {
 
 function friendlyCoreError(status, detail = {}) {
   const raw = detail.message || detail.error || '';
+  if (detail.error === 'invalid_invite_code') {
+    return 'That is not the pilot invite code. Use the invite code from Render, not the OpenAI API key.';
+  }
+  if (detail.error === 'pilot_auth_not_configured') {
+    return 'Core pilot login is not fully configured in Render. Add the pilot invite code and session secret, then redeploy Core.';
+  }
+  if (detail.error === 'unauthorized') {
+    return 'Your Core session is missing or expired. Sign in with the pilot invite code again.';
+  }
   if (/insufficient_quota|quota|billing/i.test(raw)) {
     return 'Core AI billing or quota is not available. Demo guidance is still active.';
   }

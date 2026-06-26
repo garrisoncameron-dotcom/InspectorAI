@@ -1947,7 +1947,7 @@ function App() {
       setAiRuntimeMode('core');
       setCoreStatus({
         state: 'ready',
-        message: `Pilot session active${session.expiresAt ? ` until ${new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`
+        message: `Core AI connected. Pilot session active${session.expiresAt ? ` until ${new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`
       });
     } catch (error) {
       setCoreStatus({
@@ -3232,12 +3232,12 @@ function App() {
                         />
                       </label>
                       <label>
-                        <span>Pilot invite</span>
+                        <span>Pilot invite code</span>
                         <input
                           type="password"
                           value={coreInviteCode}
                           onChange={(event) => setCoreInviteCode(event.target.value)}
-                          placeholder="Enter private pilot code"
+                          placeholder="Not the OpenAI API key"
                         />
                       </label>
                       <button className="ghost-button" type="button" onClick={signInToCorePilot}>
@@ -3258,7 +3258,7 @@ function App() {
                       <p>
                         {coreMode
                           ? coreStatus.message || 'Core mode calls InspectorAI-Core for Ask and item-level AI Assist.'
-                          : 'Public demo mode remains active. Core AI controls are enabled only for staging and local testing.'}
+                          : coreStatus.message || 'Public demo mode remains active. Paste the Render pilot invite code to use Core AI. The OpenAI API key stays hidden on the server.'}
                       </p>
                     </div>
                   )}
