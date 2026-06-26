@@ -23,6 +23,7 @@ import {
   MessageSquareText,
   Mic,
   Moon,
+  Paperclip,
   Plus,
   PenLine,
   Radio,
@@ -36,6 +37,18 @@ import {
   Wifi,
   X
 } from 'lucide-react';
+import {
+  DEFAULT_CORE_API_URL,
+  askCoreApprovedSources,
+  createCorePilotSession,
+  coreControlsEnabled,
+  coreRuntimeAvailable,
+  getStoredCoreSettings,
+  inspectionAssistCore,
+  jurisdictionIdForName,
+  photoAssistCore,
+  saveCoreSettings
+} from './api/inspectorAiClient.js';
 import './styles.css';
 
 
@@ -587,10 +600,42 @@ const PHOTO_SIGNALS = [
   }
 ];
 
+const PHOTO_FEEDBACK_QUEUE_KEY = 'inspectaid.photoFeedbackQueue';
+const PHOTO_FEEDBACK_OPTIONS = [
+  { id: 'confirmed', label: 'Confirmed', icon: CheckCircle2 },
+  { id: 'not-visible', label: 'Not visible', icon: CircleHelp },
+  { id: 'wrong', label: 'Wrong', icon: X },
+  { id: 'supervisor', label: 'Needs supervisor', icon: AlertTriangle }
+];
+
+const PHOTO_REVIEW_STATUS = {
+  pending: 'Pending review',
+  reviewed: 'Reviewed',
+  training: 'Training approved',
+  followup: 'Needs follow-up'
+};
+
+const ATTACHMENT_SOURCE_LABELS = {
+  camera: 'Camera',
+  roll: 'Camera roll',
+  file: 'File'
+};
+
+function loadPhotoFeedbackQueue() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
 const FEATURES = [
   { id: 'ask', label: 'Ask', icon: MessageSquareText },
   { id: 'inspection', label: 'AI Inspection', icon: Sparkles },
   { id: 'configure', label: 'Configure', icon: SlidersHorizontal },
+  { id: 'templates', label: 'Templates', icon: PenLine },
   { id: 'photo', label: 'Photo Aid', icon: Camera },
   { id: 'workflow', label: 'Workflow', icon: ClipboardCheck },
   { id: 'knowledge', label: 'Knowledge', icon: FileCheck2 }
@@ -677,6 +722,48 @@ const CHECKLIST_VIEW_FILTERS = [
   { id: 'unmarked', label: 'Unmarked' },
   { id: 'out', label: 'Out' },
   { id: 'done', label: 'Done' }
+];
+
+const TEMPLATE_FIELD_TYPES = [
+  { id: 'text', label: 'Text field' },
+  { id: 'status', label: 'Status bubble' },
+  { id: 'cos', label: 'COS bubble' },
+  { id: 'repeat', label: 'Repeat bubble' },
+  { id: 'temperature', label: 'Temperature cell' },
+  { id: 'observation', label: 'Observation block' },
+  { id: 'signature', label: 'Signature' }
+];
+
+const TEMPLATE_BINDINGS = [
+  'establishment.name',
+  'establishment.address',
+  'inspection.date',
+  'inspection.timeIn',
+  'inspection.timeOut',
+  'inspection.permit',
+  'inspection.cfsm',
+  'inspection.score',
+  'checklist.1-2A.IN',
+  'checklist.1-2A.OUT',
+  'checklist.6-1A.OUT',
+  'checklist.6-1A.COS',
+  'checklist.6-1A.REPEAT',
+  'temperatures.row.item',
+  'temperatures.row.temp',
+  'violations.addendum',
+  'signature.operator',
+  'signature.inspector'
+];
+
+const DEFAULT_TEMPLATE_POINTS = [
+  { id: 'tpl-est-name', page: 1, type: 'text', label: 'Establishment name', binding: 'establishment.name', x: 28.8, y: 9.7 },
+  { id: 'tpl-date', page: 1, type: 'text', label: 'Inspection date', binding: 'inspection.date', x: 17.2, y: 13.9 },
+  { id: 'tpl-6-1a-out', page: 1, type: 'status', label: '6-1A Out bubble', binding: 'checklist.6-1A.OUT', x: 62.3, y: 41.5 },
+  { id: 'tpl-6-1a-cos', page: 1, type: 'cos', label: '6-1A COS bubble', binding: 'checklist.6-1A.COS', x: 96.5, y: 41.5 },
+  { id: 'tpl-temp-item', page: 2, type: 'temperature', label: 'Temperature item', binding: 'temperatures.row.item', x: 9.0, y: 31.0 },
+  { id: 'tpl-violations', page: 2, type: 'observation', label: 'Violation addendum', binding: 'violations.addendum', x: 14.0, y: 54.0 },
+  { id: 'tpl-operator-sig', page: 1, type: 'signature', label: 'Operator signature', binding: 'signature.operator', x: 19.0, y: 95.2 },
+  { id: 'tpl-inspector-sig', page: 1, type: 'signature', label: 'Inspector signature', binding: 'signature.inspector', x: 17.0, y: 97.8 }
 ];
 
 const VIOLATION_STATUS_OPTIONS = ['Violation', 'Repeat', 'COS'];
@@ -827,6 +914,72 @@ function dataUrlToBytes(dataUrl) {
   return bytes;
 }
 
+const FORM_STATUS_POSITIONS = {
+  '1-2A': { x: 52, y: 554, columns: 'full', side: 'left' },
+  '1-2B': { x: 52, y: 543, columns: 'full', side: 'left' },
+  '2-1A': { x: 52, y: 508, columns: 'full', side: 'left' },
+  '2-1B': { x: 52, y: 497, columns: 'full', side: 'left' },
+  '2-1C': { x: 52, y: 479, columns: 'full', side: 'left' },
+  '2-2A': { x: 52, y: 451, columns: 'full', side: 'left' },
+  '2-2B': { x: 52, y: 440, columns: 'full', side: 'left' },
+  '2-2C': { x: 52, y: 429, columns: 'full', side: 'left' },
+  '2-2D': { x: 52, y: 418, columns: 'full', side: 'left' },
+  '2-2E': { x: 52, y: 407, columns: 'full', side: 'left' },
+  '3-1A': { x: 52, y: 385, columns: 'full', side: 'left' },
+  '3-1B': { x: 52, y: 374, columns: 'full', side: 'left' },
+  '3-1C': { x: 52, y: 363, columns: 'full', side: 'left' },
+  '3-1D': { x: 52, y: 352, columns: 'full', side: 'left' },
+  '4-1A': { x: 52, y: 329, columns: 'full', side: 'left' },
+  '4-1B': { x: 52, y: 317, columns: 'full', side: 'left' },
+  '4-2A': { x: 52, y: 286, columns: 'full', side: 'left' },
+  '4-2B': { x: 52, y: 275, columns: 'full', side: 'left' },
+  '5-1A': { x: 365, y: 543, columns: 'full', side: 'right' },
+  '5-1B': { x: 365, y: 531, columns: 'full', side: 'right' },
+  '5-2': { x: 365, y: 503, columns: 'full', side: 'right' },
+  '6-1A': { x: 365, y: 464, columns: 'full', side: 'right' },
+  '6-1B': { x: 365, y: 453, columns: 'full', side: 'right' },
+  '6-1C': { x: 365, y: 442, columns: 'full', side: 'right' },
+  '6-1D': { x: 365, y: 425, columns: 'full', side: 'right' },
+  '6-2': { x: 365, y: 395, columns: 'full', side: 'right' },
+  '7-1': { x: 365, y: 376, columns: 'full', side: 'right' },
+  '8-2A': { x: 365, y: 349, columns: 'full', side: 'right' },
+  '8-2B': { x: 365, y: 332, columns: 'full', side: 'right' },
+  '9-2': { x: 365, y: 296, columns: 'full', side: 'right' },
+  '10A': { x: 69, y: 205, columns: 'outOnly' },
+  '10B': { x: 69, y: 194, columns: 'outOnly' },
+  '10C': { x: 69, y: 183, columns: 'outOnly' },
+  '10D': { x: 69, y: 162, columns: 'outOnly' },
+  '11A': { x: 69, y: 128, columns: 'outOnly' },
+  '11B': { x: 69, y: 116, columns: 'outOnly' },
+  '11C': { x: 69, y: 105, columns: 'outOnly' },
+  '11D': { x: 69, y: 94, columns: 'outOnly' },
+  '12A': { x: 69, y: 67, columns: 'outOnly' },
+  '12B': { x: 69, y: 55, columns: 'outOnly' },
+  '12C': { x: 69, y: 44, columns: 'outOnly' },
+  '12D': { x: 69, y: 33, columns: 'outOnly' },
+  '13A': { x: 69, y: 20, columns: 'outOnly' },
+  '13B': { x: 69, y: 9, columns: 'outOnly' },
+  '14A': { x: 377, y: 205, columns: 'outOnly' },
+  '14B': { x: 377, y: 194, columns: 'outOnly' },
+  '14C': { x: 377, y: 183, columns: 'outOnly' },
+  '14D': { x: 377, y: 172, columns: 'outOnly' },
+  '15A': { x: 377, y: 137, columns: 'outOnly' },
+  '15B': { x: 377, y: 116, columns: 'outOnly' },
+  '15C': { x: 377, y: 104, columns: 'outOnly' },
+  '16A': { x: 377, y: 78, columns: 'outOnly' },
+  '16B': { x: 377, y: 66, columns: 'outOnly' },
+  '16C': { x: 377, y: 55, columns: 'outOnly' },
+  '17A': { x: 377, y: 36, columns: 'outOnly' },
+  '17B': { x: 377, y: 25, columns: 'outOnly' },
+  '17C': { x: 377, y: 14, columns: 'outOnly' },
+  '17D': { x: 377, y: 3, columns: 'outOnly' },
+  '18': { x: 377, y: -8, columns: 'outOnly' }
+};
+
+function checklistFormKey(item) {
+  return `${item.number}${item.letter || ''}`;
+}
+
 function makeImageOnlyPdf(pageImages) {
   const pageWidth = 612;
   const pageHeight = 792;
@@ -881,6 +1034,7 @@ async function buildInspectionPdf(record) {
   const backgrounds = await Promise.all([gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3].map(loadPdfImage));
   const operatorSignature = record.signatures.operator ? await loadPdfImage(record.signatures.operator) : null;
   const inspectorSignature = record.signatures.inspector ? await loadPdfImage(record.signatures.inspector) : null;
+  const violationById = new Map(record.violations.map((violation) => [violation.id, violation]));
   const pageImages = backgrounds.map((background) => {
     const canvas = document.createElement('canvas');
     canvas.width = 1275;
@@ -903,31 +1057,54 @@ async function buildInspectionPdf(record) {
     const writeWrapped = (text, x, y, size = 8, maxLength = 72, lineHeight = 10, limit = 6) => {
       wrapPdfText(text, maxLength).slice(0, limit).forEach((line, index) => write(line, x, y - index * lineHeight, size));
     };
+    const fillCircle = (x, y, radius = 2.7) => {
+      ctx.save();
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(tx(x), ty(y), radius * sx, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    const drawStatusMark = (item) => {
+      const position = FORM_STATUS_POSITIONS[checklistFormKey(item)];
+      if (!position || !item.status) return;
+      const violation = violationById.get(item.id);
+      if (position.columns === 'outOnly') {
+        if (item.status === 'OUT') fillCircle(position.x, position.y);
+        if (violation?.violationStatus === 'COS') fillCircle(position.side === 'right' ? 590 : 314, position.y);
+        if (violation?.violationStatus === 'Repeat') fillCircle(position.side === 'right' ? 606 : 328, position.y);
+        return;
+      }
+      const offsets = { IN: 0, OUT: 16, NA: 32, NO: 47 };
+      const offset = offsets[item.status];
+      if (offset === undefined) return;
+      fillCircle(position.x + offset, position.y);
+      if (violation?.violationStatus === 'COS') fillCircle(position.side === 'right' ? 590 : 314, position.y);
+      if (violation?.violationStatus === 'Repeat') fillCircle(position.side === 'right' ? 606 : 328, position.y);
+    };
     const drawSignature = (image, x, y, width, height) => {
       if (!image) return;
       ctx.drawImage(image, tx(x), ty(y + height), width * sx, height * sy);
     };
 
     if (background === backgrounds[0]) {
-      write(record.info.establishmentName, 104, 650, 9);
-      write(record.info.address, 72, 632, 8);
-      write(record.info.cityStateZip, 74, 614, 8);
-      write(record.info.permitNumber, 434, 650, 8);
-      write(record.info.inspectionType, 438, 632, 8);
-      write(record.savedAt.split(',')[0], 434, 614, 8);
-      write(record.info.timeIn, 95, 596, 8);
-      write(record.info.timeOut, 208, 596, 8);
-      write(record.info.cfsm, 330, 596, 8);
-      write(record.violations.length ? 'Draft' : '100', 520, 675, 16, '700');
-      record.checklist.slice(0, 27).forEach((item, index) => {
-        if (!item.status) return;
-        const col = index < 14 ? 0 : 1;
-        const row = col === 0 ? index : index - 14;
-        write(item.status, col === 0 ? 276 : 557, 487 - row * 19.8, 7, '700');
-      });
-      drawSignature(operatorSignature, 70, 59, 132, 36);
-      drawSignature(inspectorSignature, 255, 59, 132, 36);
-      write(record.info.followUpRequired === 'Yes' ? 'YES' : 'NO', 500, 72, 8, '700');
+      write(record.info.establishmentName, 176, 716, 7.4);
+      write(record.info.address, 133, 705, 7.4);
+      write(record.info.cityStateZip, 60, 694, 7);
+      write(record.info.timeIn, 181, 694, 7);
+      write(record.info.timeOut, 316, 694, 7);
+      write(record.savedAt.split(',')[0], 105, 682, 7);
+      write(record.info.cfsm, 201, 682, 7);
+      write(record.info.permitNumber, 228, 647, 7);
+      write(record.violations.length ? 'Draft' : '100', 466, 681, 14, '700');
+      if (record.info.inspectionType === 'Routine') fillCircle(171, 678, 3);
+      if (record.info.inspectionType === 'Follow-up') fillCircle(232, 678, 3);
+      if (record.info.inspectionType === 'Opening') fillCircle(294, 678, 3);
+      record.checklist.forEach(drawStatusMark);
+      drawSignature(operatorSignature, 112, 38, 200, 18);
+      drawSignature(inspectorSignature, 104, 17, 210, 18);
+      if (record.info.followUpRequired === 'Yes') fillCircle(433, 22, 3);
+      if (record.info.followUpRequired !== 'Yes') fillCircle(478, 22, 3);
     }
 
     if (background === backgrounds[1]) {
@@ -946,9 +1123,9 @@ async function buildInspectionPdf(record) {
       });
       record.violations.slice(0, 8).forEach((violation, index) => {
         const y = 360 - index * 64;
-        write(`${violation.number}${violation.letter || ''}`, 47, y, 9, '700');
-        writeWrapped(violation.comment, 86, y + 4, 7.2, 78, 9, 3);
-        writeWrapped(`CA: ${violation.correctiveAction}`, 86, y - 24, 7, 78, 8, 2);
+        write(`${violation.number}${violation.letter || ''}`, 47, y, 8, '700');
+        writeWrapped(violation.comment, 86, y + 4, 6.7, 88, 8, 3);
+        writeWrapped(`CA: ${violation.correctiveAction}`, 86, y - 22, 6.4, 88, 7.5, 2);
         write(violation.violationStatus, 510, y, 7, '700');
         write(violation.correctByDate, 510, y - 12, 7);
       });
@@ -960,7 +1137,7 @@ async function buildInspectionPdf(record) {
       write(record.savedAt.split(',')[0], 500, 712, 8);
       writeWrapped(record.info.notes || 'Final report generated from InspectAid field workflow.', 64, 640, 8, 92, 10, 8);
       record.violations.slice(8, 18).forEach((violation, index) => {
-        writeWrapped(`${violation.number}${violation.letter || ''}: ${violation.comment} CA: ${violation.correctiveAction}`, 64, 548 - index * 42, 7.2, 95, 9, 4);
+        writeWrapped(`${violation.number}${violation.letter || ''}: ${violation.comment} CA: ${violation.correctiveAction}`, 64, 548 - index * 42, 6.7, 104, 8, 4);
       });
       drawSignature(operatorSignature, 72, 76, 132, 36);
       drawSignature(inspectorSignature, 252, 76, 132, 36);
@@ -1156,15 +1333,26 @@ function buildInspectionCsv(record) {
       violation.correctiveAction
     ]),
     [],
-    ['temperature_readings'],
-    ['location', 'item', 'temperature', 'standard'],
-    ...record.temperatureReadings.map((reading) => [
-      reading.location,
-      reading.item,
-      reading.temperature,
-      `${reading.standardLabel} ${reading.limitLabel}`
-    ])
-  ];
+	    ['temperature_readings'],
+	    ['location', 'item', 'temperature', 'standard'],
+	    ...record.temperatureReadings.map((reading) => [
+	      reading.location,
+	      reading.item,
+	      reading.temperature,
+	      `${reading.standardLabel} ${reading.limitLabel}`
+	    ]),
+	    [],
+	    ['attachments'],
+	    ['name', 'type', 'source', 'captured_at', 'size', 'ai_reviewed'],
+	    ...(record.attachments ?? []).map((attachment) => [
+	      attachment.name,
+	      attachment.type,
+	      attachment.sourceLabel,
+	      attachment.capturedAt,
+	      attachment.sizeLabel,
+	      attachment.aiReviewed ? 'yes' : 'no'
+	    ])
+	  ];
   return rows.map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
 }
 
@@ -1502,13 +1690,29 @@ function generateDraftChecklist(selectedDocs, jurisdictionName) {
 }
 
 function App() {
+  const storedCoreSettings = useMemo(() => getStoredCoreSettings(), []);
   const [query, setQuery] = useState('Cold holding chicken at 48 F in Gwinnett County');
   const [jurisdiction, setJurisdiction] = useState('Gwinnett County GA');
   const [answer, setAnswer] = useState(null);
   const [history, setHistory] = useState([]);
+  const [aiRuntimeMode, setAiRuntimeMode] = useState(storedCoreSettings.mode);
+  const [coreApiUrl, setCoreApiUrl] = useState(storedCoreSettings.baseUrl || DEFAULT_CORE_API_URL);
+  const [coreApiToken, setCoreApiToken] = useState(storedCoreSettings.token || '');
+  const [coreInviteCode, setCoreInviteCode] = useState('');
+  const [coreStatus, setCoreStatus] = useState({ state: 'idle', message: '' });
+  const [coreAssistByItem, setCoreAssistByItem] = useState({});
+  const [showCoreControls] = useState(() => coreControlsEnabled());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [photoName, setPhotoName] = useState('');
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
+  const [photoReviewImageUrl, setPhotoReviewImageUrl] = useState('');
+  const [photoSummary, setPhotoSummary] = useState('');
   const [photoFindings, setPhotoFindings] = useState([]);
+  const [photoFeedbackByFinding, setPhotoFeedbackByFinding] = useState({});
+  const [photoFeedbackQueue, setPhotoFeedbackQueue] = useState(() => loadPhotoFeedbackQueue());
+  const [photoReviewModalEntry, setPhotoReviewModalEntry] = useState(null);
+  const [inspectionAttachments, setInspectionAttachments] = useState([]);
+  const [pendingAttachmentPrompt, setPendingAttachmentPrompt] = useState(null);
   const [listening, setListening] = useState(false);
   const [activeFeature, setActiveFeature] = useState('ask');
   const [checklistStatuses, setChecklistStatuses] = useState({});
@@ -1549,7 +1753,17 @@ function App() {
   ]);
   const [draftChecklist, setDraftChecklist] = useState([]);
   const [lockedProfile, setLockedProfile] = useState(null);
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templateFieldType, setTemplateFieldType] = useState('text');
+  const [templateLabel, setTemplateLabel] = useState('New mapped field');
+  const [templateBinding, setTemplateBinding] = useState('establishment.name');
+  const [templatePoints, setTemplatePoints] = useState(DEFAULT_TEMPLATE_POINTS);
+  const [selectedTemplatePointId, setSelectedTemplatePointId] = useState(DEFAULT_TEMPLATE_POINTS[0]?.id ?? null);
+  const [savedTemplateProfile, setSavedTemplateProfile] = useState(null);
   const recognitionRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const cameraRollInputRef = useRef(null);
+  const fileAttachmentInputRef = useRef(null);
 
   const jurisdictions = useMemo(() => ['All jurisdictions', ...new Set(APPROVED_DOCS.map((doc) => doc.jurisdiction))], []);
   const activeDepartment = HEALTH_DEPARTMENTS.find((department) => department.id === activeDepartmentId) ?? HEALTH_DEPARTMENTS[0];
@@ -1604,18 +1818,42 @@ function App() {
   const activeSourceDocs = APPROVED_DOCS.filter((doc) => activeDocIds.includes(doc.id));
   const approvedCount = activeSourceDocs.reduce((count, doc) => count + doc.sections.length, 0);
   const sourceCoverage = sourceCoverageForDocs(activeSourceDocs);
-  const activeAssist = activeChecklistItem
+  const coreJurisdictionId = jurisdictionIdForName(jurisdiction, activeDepartmentId);
+  const coreCanRun = coreRuntimeAvailable(coreApiUrl);
+  const coreHasSession = Boolean(coreApiToken.trim());
+  const coreMode = aiRuntimeMode === 'core' && coreCanRun && coreHasSession;
+  const photoFeedbackCount = Object.values(photoFeedbackByFinding).filter((feedback) => feedback.decision).length;
+  const photoReviewStats = useMemo(() => {
+    return photoFeedbackQueue.reduce(
+      (stats, item) => {
+        const status = item.reviewStatus ?? 'pending';
+        stats.total += 1;
+        stats[status] = (stats[status] ?? 0) + 1;
+        return stats;
+      },
+      { total: 0, pending: 0, reviewed: 0, training: 0, followup: 0 }
+    );
+  }, [photoFeedbackQueue]);
+  const demoActiveAssist = activeChecklistItem
     ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
     : null;
+  const activeAssist =
+    coreMode && activeChecklistItem && coreAssistByItem[activeChecklistItem.id]
+      ? coreAssistByItem[activeChecklistItem.id]
+      : demoActiveAssist;
   const activeViolationDetails = activeChecklistItem ? violationDetails[activeChecklistItem.id] : null;
   const activeViolationChat = activeChecklistItem ? violationChats[activeChecklistItem.id] ?? [] : [];
   const activeViolationChatDraft = activeChecklistItem ? violationChatDrafts[activeChecklistItem.id] ?? '' : '';
   const activeCachedDate =
     activeChecklistItem && typeof window !== 'undefined' ? window.__violationDateCache?.[activeChecklistItem.id] : '';
   const modalViolationDetails = violationModalItem ? violationDetails[violationModalItem.id] : null;
-  const modalViolationAssist = violationModalItem
+  const demoModalViolationAssist = violationModalItem
     ? composeInspectionAssist(violationModalItem, checklistStatuses[violationModalItem.id], jurisdiction, activeDocIds)
     : null;
+  const modalViolationAssist =
+    coreMode && violationModalItem && coreAssistByItem[violationModalItem.id]
+      ? coreAssistByItem[violationModalItem.id]
+      : demoModalViolationAssist;
   const modalViolationChat = violationModalItem ? violationChats[violationModalItem.id] ?? [] : [];
   const modalViolationChatDraft = violationModalItem ? violationChatDrafts[violationModalItem.id] ?? '' : '';
   const modalCachedDate =
@@ -1630,6 +1868,9 @@ function App() {
   }, [checklistStatuses, violationDetails]);
   const canSaveTemperatureReading =
     temperatureDraft.location.trim() || temperatureDraft.item.trim() || temperatureDraft.temperature.trim();
+  const currentTemplateImage = [gwinnettFormPage1, gwinnettFormPage2, gwinnettFormPage3][templatePage - 1];
+  const visibleTemplatePoints = templatePoints.filter((point) => point.page === templatePage);
+  const selectedTemplatePoint = templatePoints.find((point) => point.id === selectedTemplatePointId) ?? null;
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -1678,9 +1919,124 @@ function App() {
     };
   }, [activeChecklistItem, checklistStatuses]);
 
-  function ask(nextQuery = query) {
+  useEffect(() => {
+    saveCoreSettings({ mode: aiRuntimeMode, baseUrl: coreApiUrl, token: coreApiToken });
+  }, [aiRuntimeMode, coreApiUrl, coreApiToken]);
+
+  useEffect(() => {
+    if (aiRuntimeMode === 'core' && (!coreCanRun || !coreHasSession)) {
+      setAiRuntimeMode('demo');
+      if (!coreHasSession) {
+        setCoreStatus({
+          state: 'error',
+          message: 'Core AI needs a pilot session first. Paste the pilot invite code and tap Sign in to Core.'
+        });
+      }
+    }
+  }, [aiRuntimeMode, coreCanRun, coreHasSession]);
+
+  function enableCoreRuntime() {
+    if (!coreCanRun) {
+      setCoreStatus({ state: 'error', message: 'Set the hosted Core API URL before enabling Core AI.' });
+      return;
+    }
+    if (!coreHasSession) {
+      setCoreStatus({
+        state: 'error',
+        message: 'Sign in with the pilot invite code first. The OpenAI API key stays hidden in Render.'
+      });
+      return;
+    }
+    setAiRuntimeMode('core');
+  }
+
+  async function signInToCorePilot() {
+    const inviteCode = coreInviteCode.trim();
+    if (!inviteCode) {
+      setCoreStatus({ state: 'error', message: 'Enter a pilot invite code before enabling Core AI.' });
+      return;
+    }
+
+    setCoreStatus({ state: 'loading', message: 'Creating secure pilot session...' });
+    try {
+      const session = await createCorePilotSession({
+        baseUrl: coreApiUrl,
+        inviteCode,
+        userLabel: 'InspectorAI pilot'
+      });
+      setCoreApiToken(session.token);
+      setCoreInviteCode('');
+      setAiRuntimeMode('core');
+      setCoreStatus({
+        state: 'ready',
+        message: `Core AI connected. Pilot session active${session.expiresAt ? ` until ${new Date(session.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`
+      });
+    } catch (error) {
+      setCoreStatus({
+        state: 'error',
+        message: `Pilot sign-in failed. ${error.message}`
+      });
+    }
+  }
+
+  useEffect(() => {
+    if (!coreMode || !activeChecklistItem) return undefined;
+    let cancelled = false;
+    const item = activeChecklistItem;
+    setCoreStatus({ state: 'loading', message: 'Asking InspectorAI Core for item guidance...' });
+
+    inspectionAssistCore({
+      baseUrl: coreApiUrl,
+      token: coreApiToken,
+      jurisdictionId: coreJurisdictionId,
+      item,
+      status: checklistStatuses[item.id] ?? '',
+      observedFacts: violationDetails[item.id]?.commentText ?? ''
+    })
+      .then((assist) => {
+        if (cancelled) return;
+        setCoreAssistByItem((current) => ({ ...current, [item.id]: assist }));
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setCoreStatus({
+          state: 'error',
+          message: `Core unavailable. Demo guidance is still active. ${error.message}`
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChecklistItem, checklistStatuses, coreApiToken, coreApiUrl, coreJurisdictionId, coreMode, violationDetails]);
+
+  async function ask(nextQuery = query) {
     const trimmed = nextQuery.trim();
     if (!trimmed) return;
+
+    if (coreMode) {
+      setCoreStatus({ state: 'loading', message: 'Asking InspectorAI Core...' });
+      try {
+        const result = await askCoreApprovedSources({
+          baseUrl: coreApiUrl,
+          token: coreApiToken,
+          query: trimmed,
+          jurisdiction,
+          jurisdictionId: coreJurisdictionId
+        });
+        setAnswer(result);
+        setHistory((items) => [result, ...items].slice(0, 6));
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
+        return;
+      } catch (error) {
+        setCoreStatus({
+          state: 'error',
+          message: `Core unavailable. Falling back to demo answer. ${error.message}`
+        });
+      }
+    }
+
     const evidence = findEvidence(trimmed, jurisdiction, activeDocIds);
     const composed = composeAnswer(trimmed, evidence, { jurisdiction, coverage: sourceCoverage });
     const result = {
@@ -1732,12 +2088,235 @@ function App() {
     recognition.start();
   }
 
-  function handlePhoto(event) {
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function createPhotoReviewSnapshot(imageDataUrl) {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined') {
+        resolve(imageDataUrl);
+        return;
+      }
+
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const maxEdge = 720;
+          const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+          const width = Math.max(1, Math.round(image.width * scale));
+          const height = Math.max(1, Math.round(image.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.72));
+        } catch {
+          resolve(imageDataUrl);
+        }
+      };
+      image.onerror = () => resolve(imageDataUrl);
+      image.src = imageDataUrl;
+    });
+  }
+
+  function photoFindingFeedbackKey(finding, index) {
+    return `${photoName || 'photo'}::${index}::${finding.label || 'finding'}`;
+  }
+
+  function savePhotoFeedbackQueue(entry) {
+    if (typeof window === 'undefined') return;
+    try {
+      const existing = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
+      const withoutCurrent = existing.filter((item) => item.id !== entry.id);
+      const nextQueue = [entry, ...withoutCurrent].slice(0, 40);
+      window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify(nextQueue));
+      setPhotoFeedbackQueue(nextQueue);
+    } catch {
+      try {
+        const lightweightEntry = { ...entry, photoDataUrl: '' };
+        const existing = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
+        const withoutCurrent = existing.filter((item) => item.id !== entry.id);
+        const nextQueue = [lightweightEntry, ...withoutCurrent].slice(0, 40);
+        window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify(nextQueue));
+        setPhotoFeedbackQueue(nextQueue);
+      } catch {
+        // Feedback is helpful, but losing local queue storage should not interrupt inspection work.
+      }
+    }
+  }
+
+  function persistPhotoFeedbackQueue(nextQueue) {
+    setPhotoFeedbackQueue(nextQueue);
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify(nextQueue));
+    } catch {
+      // Supervisor review state should never block the active field workflow.
+    }
+  }
+
+  function updatePhotoReviewEntry(id, patch) {
+    const nextQueue = photoFeedbackQueue.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            ...patch,
+            reviewedAt: new Date().toISOString()
+          }
+        : item
+    );
+    persistPhotoFeedbackQueue(nextQueue);
+  }
+
+  function removePhotoReviewEntry(id) {
+    persistPhotoFeedbackQueue(photoFeedbackQueue.filter((item) => item.id !== id));
+  }
+
+  async function runPhotoAnalysis(name, imageDataUrl) {
+    const reviewImageUrl = await createPhotoReviewSnapshot(imageDataUrl);
+    setPhotoName(name);
+    setPhotoSummary('');
+    setPhotoFindings([]);
+    setPhotoFeedbackByFinding({});
+    setPhotoPreviewUrl(imageDataUrl);
+    setPhotoReviewImageUrl(reviewImageUrl);
+
+    if (coreMode) {
+      try {
+        setCoreStatus({ state: 'loading', message: 'InspectorAI Core is reviewing the photo...' });
+        const review = await photoAssistCore({
+          baseUrl: coreApiUrl,
+          token: coreApiToken,
+          jurisdictionId: coreJurisdictionId,
+          imageDataUrl,
+          context: `Jurisdiction: ${jurisdiction}. Inspector uploaded ${name}. Return conservative photo review prompts.`
+        });
+        setPhotoSummary(review.summary);
+        setPhotoFindings(review.findings.length ? review.findings : PHOTO_SIGNALS.slice(0, 3));
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core photo review complete.' });
+        return;
+      } catch (error) {
+        setCoreStatus({
+          state: 'error',
+          message: `Photo Aid is using demo prompts. ${error.message}`
+        });
+      }
+    }
+
+    setPhotoSummary('Demo Photo Aid prompts are shown until Core photo review is available.');
+    setPhotoFindings(PHOTO_SIGNALS.filter((_, index) => index < 3));
+  }
+
+  function updatePhotoFindingFeedback(index, finding, patch) {
+    const id = photoFindingFeedbackKey(finding, index);
+    setPhotoFeedbackByFinding((current) => {
+      const existingEntry = current[id] ?? {};
+      const entry = {
+        id,
+        photoName,
+        jurisdiction,
+        findingLabel: finding.label,
+        findingTopic: finding.topic,
+        findingRisk: finding.risk,
+        findingVerification: finding.verification,
+        confidence: finding.confidence,
+        photoDataUrl: photoReviewImageUrl,
+        photoSummary,
+        createdAt: existingEntry.createdAt ?? new Date().toISOString(),
+        reviewStatus: existingEntry.reviewStatus ?? 'pending',
+        ...existingEntry,
+        updatedAt: new Date().toISOString(),
+        ...patch
+      };
+      savePhotoFeedbackQueue(entry);
+      return { ...current, [id]: entry };
+    });
+  }
+
+  async function handlePhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    setPhotoName(file.name);
-    const selected = PHOTO_SIGNALS.filter((_, index) => index < 3);
-    setPhotoFindings(selected);
+    try {
+      const imageDataUrl = await readFileAsDataUrl(file);
+      await runPhotoAnalysis(file.name, imageDataUrl);
+    } catch (error) {
+      setCoreStatus({
+        state: 'error',
+        message: `Photo Aid is using demo prompts. ${error.message}`
+      });
+      setPhotoSummary('Demo Photo Aid prompts are shown until Core photo review is available.');
+      setPhotoFindings(PHOTO_SIGNALS.filter((_, index) => index < 3));
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  function formatAttachmentSize(bytes) {
+    if (!bytes) return '0 KB';
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function handleInspectionAttachment(event, source) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const isImage = file.type.startsWith('image/');
+      const previewUrl = isImage ? await createPhotoReviewSnapshot(dataUrl) : '';
+      const attachment = {
+        id: crypto.randomUUID(),
+        name: file.name || `${ATTACHMENT_SOURCE_LABELS[source]} attachment`,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        sizeLabel: formatAttachmentSize(file.size),
+        source,
+        sourceLabel: ATTACHMENT_SOURCE_LABELS[source] ?? 'Attachment',
+        isImage,
+        dataUrl,
+        previewUrl,
+        aiReviewed: false,
+        capturedAt: new Date().toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
+        }),
+        createdAt: new Date().toISOString()
+      };
+      setInspectionAttachments((current) => [attachment, ...current].slice(0, 40));
+      if (isImage) setPendingAttachmentPrompt(attachment);
+    } catch (error) {
+      setCoreStatus({ state: 'error', message: `Attachment could not be saved. ${error.message}` });
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  function removeInspectionAttachment(attachmentId) {
+    setInspectionAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+    if (pendingAttachmentPrompt?.id === attachmentId) setPendingAttachmentPrompt(null);
+  }
+
+  function dismissAttachmentAiPrompt() {
+    setPendingAttachmentPrompt(null);
+  }
+
+  async function analyzeInspectionAttachment(attachment = pendingAttachmentPrompt) {
+    if (!attachment) return;
+    setInspectionAttachments((current) =>
+      current.map((item) => (item.id === attachment.id ? { ...item, aiReviewed: true } : item))
+    );
+    setPendingAttachmentPrompt(null);
+    setActiveFeature('photo');
+    await runPhotoAnalysis(attachment.name, attachment.dataUrl);
   }
 
   function markChecklistItem(item, status) {
@@ -1981,11 +2560,12 @@ function App() {
         category: item.category,
         status: checklistStatuses[item.id] || ''
       })),
-      counts: checklistCounts,
-      violations,
-      temperatureReadings
-    };
-  }
+	      counts: checklistCounts,
+	      violations,
+	      temperatureReadings,
+	      attachments: inspectionAttachments
+	    };
+	  }
 
   function saveInspectionRecord(record) {
     const stored = JSON.parse(window.localStorage.getItem('inspectaid.inspectionRecords') || '[]');
@@ -2010,10 +2590,35 @@ function App() {
     await downloadFinalPdf(record);
   }
 
-  function askViolationQuestion(item, evidence) {
+  async function getViolationAnswer(question, item, evidence) {
+    if (coreMode) {
+      try {
+        setCoreStatus({ state: 'loading', message: 'Asking InspectorAI Core about this violation...' });
+        const details = violationDetails[item.id] ?? {};
+        const result = await askCoreApprovedSources({
+          baseUrl: coreApiUrl,
+          token: coreApiToken,
+          jurisdiction,
+          jurisdictionId: coreJurisdictionId,
+          query: `${item.number}${item.letter ?? ''} ${item.short}. Inspector question: ${question}. Current observation: ${details.commentText ?? ''}`
+        });
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core connected.' });
+        return result.body;
+      } catch (error) {
+        setCoreStatus({
+          state: 'error',
+          message: `Core unavailable for violation chat. Demo guidance is still active. ${error.message}`
+        });
+      }
+    }
+
+    return composeViolationChatAnswer(question, item, evidence, violationDetails[item.id]);
+  }
+
+  async function askViolationQuestion(item, evidence) {
     const question = (violationChatDrafts[item.id] ?? '').trim();
     if (!question) return;
-    const answerText = composeViolationChatAnswer(question, item, evidence, violationDetails[item.id]);
+    const answerText = await getViolationAnswer(question, item, evidence);
     setViolationChats((current) => ({
       ...current,
       [item.id]: [
@@ -2025,8 +2630,8 @@ function App() {
     setViolationChatDrafts((current) => ({ ...current, [item.id]: '' }));
   }
 
-  function useViolationPrompt(item, prompt, evidence) {
-    const answerText = composeViolationChatAnswer(prompt, item, evidence, violationDetails[item.id]);
+  async function useViolationPrompt(item, prompt, evidence) {
+    const answerText = await getViolationAnswer(prompt, item, evidence);
     setViolationChats((current) => ({
       ...current,
       [item.id]: [
@@ -2422,6 +3027,83 @@ function App() {
     setWizardStep(4);
   }
 
+  function jumpToInspectionSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function placeTemplatePoint(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    const point = {
+      id: crypto.randomUUID(),
+      page: templatePage,
+      type: templateFieldType,
+      label: templateLabel.trim() || `Mapped field ${templatePoints.length + 1}`,
+      binding: templateBinding,
+      x: Number(x.toFixed(2)),
+      y: Number(y.toFixed(2))
+    };
+    setTemplatePoints((current) => [...current, point]);
+    setSelectedTemplatePointId(point.id);
+  }
+
+  function removeTemplatePoint(pointId) {
+    setTemplatePoints((current) => current.filter((point) => point.id !== pointId));
+    if (selectedTemplatePointId === pointId) setSelectedTemplatePointId(null);
+  }
+
+  function updateTemplatePoint(pointId, updates) {
+    setTemplatePoints((current) =>
+      current.map((point) => (point.id === pointId ? { ...point, ...updates } : point))
+    );
+  }
+
+  function nudgeTemplatePoint(pointId, dx, dy) {
+    setTemplatePoints((current) =>
+      current.map((point) =>
+        point.id === pointId
+          ? {
+              ...point,
+              x: Number(Math.min(100, Math.max(0, point.x + dx)).toFixed(2)),
+              y: Number(Math.min(100, Math.max(0, point.y + dy)).toFixed(2))
+            }
+          : point
+      )
+    );
+  }
+
+  function addChecklistRowPattern() {
+    const rowBindings = ['IN', 'OUT', 'NA', 'NO'];
+    const baseRows = ['1-2A', '1-2B', '2-1A', '2-1B', '2-1C'];
+    const generated = baseRows.flatMap((item, rowIndex) =>
+      rowBindings.map((status, columnIndex) => ({
+        id: crypto.randomUUID(),
+        page: 1,
+        type: 'status',
+        label: `${item} ${status} bubble`,
+        binding: `checklist.${item}.${status}`,
+        x: Number((18.1 + columnIndex * 2.75).toFixed(2)),
+        y: Number((27.6 + rowIndex * 1.42).toFixed(2))
+      }))
+    );
+    setTemplatePoints((current) => [...current, ...generated]);
+    setSelectedTemplatePointId(generated[0]?.id ?? selectedTemplatePointId);
+  }
+
+  function saveTemplateProfile() {
+    setSavedTemplateProfile({
+      id: 'gwinnett-food-report-template-v1',
+      name: 'Gwinnett Food Checklist v1',
+      department: activeDepartment.name,
+      pages: 3,
+      fields: templatePoints.length,
+      savedAt: new Date().toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit' })
+    });
+  }
+
   return (
     <main className="shell">
       <section className="workspace">
@@ -2542,6 +3224,73 @@ function App() {
                     </button>
                   </div>
 
+                  {showCoreControls && (
+                    <div className={`runtime-panel ${coreStatus.state}`}>
+                      <div className="runtime-toggle" aria-label="AI runtime mode">
+                        <span><Radio size={15} /> AI Runtime</span>
+                        <button
+                          className={aiRuntimeMode === 'demo' ? 'active' : ''}
+                          type="button"
+                          onClick={() => setAiRuntimeMode('demo')}
+                        >
+                          Demo
+                        </button>
+                        <button
+                          className={coreMode ? 'active' : ''}
+                          type="button"
+                          onClick={enableCoreRuntime}
+                          disabled={!coreCanRun}
+                          title={
+                            coreCanRun
+                              ? coreHasSession
+                                ? 'Use InspectorAI Core'
+                                : 'Sign in with the pilot invite code first'
+                              : 'Set a Core API URL before enabling Core AI'
+                          }
+                        >
+                          Core AI
+                        </button>
+                      </div>
+                      <label>
+                        <span>Core API</span>
+                        <input
+                          value={coreApiUrl}
+                          onChange={(event) => setCoreApiUrl(event.target.value)}
+                          placeholder={DEFAULT_CORE_API_URL}
+                        />
+                      </label>
+                      <label>
+                        <span>Pilot invite code</span>
+                        <input
+                          type="password"
+                          value={coreInviteCode}
+                          onChange={(event) => setCoreInviteCode(event.target.value)}
+                          placeholder="Not the OpenAI API key"
+                        />
+                      </label>
+                      <button className="ghost-button" type="button" onClick={signInToCorePilot}>
+                        <ShieldCheck size={17} />
+                        Sign in to Core
+                      </button>
+                      {coreApiToken && (
+                        <label>
+                          <span>Pilot session</span>
+                          <input
+                            type="password"
+                            value={coreApiToken}
+                            onChange={(event) => setCoreApiToken(event.target.value)}
+                            placeholder="Signed session token"
+                          />
+                        </label>
+                      )}
+                      <p>
+                        {coreMode
+                          ? coreStatus.message || 'Core mode calls InspectorAI-Core for Ask and item-level AI Assist.'
+                          : coreStatus.message || 'Public demo mode remains active. Paste the Render pilot invite code to use Core AI. The OpenAI API key stays hidden on the server.'}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="ask-box">
                     <MessageSquareText size={20} />
                     <textarea
@@ -2553,7 +3302,7 @@ function App() {
                       aria-label="Inspection question"
                     />
                     <button className="send-button" type="button" onClick={() => ask()} aria-label="Ask question">
-                      <Send size={20} />
+                      {coreStatus.state === 'loading' && coreMode ? <Loader2 size={20} className="spin" /> : <Send size={20} />}
                     </button>
                   </div>
 
@@ -2673,6 +3422,24 @@ function App() {
                       </select>
                       <ChevronDown size={16} />
                     </label>
+                    <label>
+                      <MapPin size={16} />
+                      <select
+                        defaultValue=""
+                        aria-label="Jump to inspection section"
+                        onChange={(event) => {
+                          if (!event.target.value) return;
+                          jumpToInspectionSection(event.target.value);
+                          event.target.value = '';
+                        }}
+                      >
+	                        <option value="">Jump to</option>
+	                        <option value="temperature-readings-section">Temps</option>
+	                        <option value="inspection-attachments-section">Attachments</option>
+	                        <option value="finalize-inspection-section">Wrap up</option>
+	                      </select>
+                      <ChevronDown size={16} />
+                    </label>
                     <div className="checklist-filter-tabs" aria-label="Checklist work queue filter">
                       {CHECKLIST_VIEW_FILTERS.map((filter) => (
                         <button
@@ -2684,6 +3451,15 @@ function App() {
                           {filter.label}
                         </button>
                       ))}
+	                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('temperature-readings-section')}>
+	                        Temps
+	                      </button>
+	                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('inspection-attachments-section')}>
+	                        Attach
+	                      </button>
+	                      <button className="jump-tab" type="button" onClick={() => jumpToInspectionSection('finalize-inspection-section')}>
+	                        Wrap up
+	                      </button>
                     </div>
                   </div>
                 </div>
@@ -2800,7 +3576,7 @@ function App() {
                   </aside>
                 </div>
 
-                <section className="temperature-panel" aria-label="Temperature readings">
+                <section className="temperature-panel" id="temperature-readings-section" aria-label="Temperature readings">
                   <div className="temperature-head">
                     <div>
                       <span className="premium-badge"><Clock3 size={15} /> Temperature readings</span>
@@ -2872,22 +3648,95 @@ function App() {
                     </div>
                   ) : (
                     <p className="muted">Saved temperatures will appear in the report preview under Temperature Observations.</p>
-                  )}
-                </section>
-
-                <section className="finalize-panel" aria-label="Finalize inspection">
-                  <div>
-                    <span className="premium-badge"><FileCheck2 size={15} /> Inspection closeout</span>
+	                  )}
+	                </section>
+	
+	                <section className="attachment-panel" id="inspection-attachments-section" aria-label="Inspection attachments">
+	                  <div className="temperature-head">
+	                    <div>
+	                      <span className="premium-badge"><Paperclip size={15} /> Attachments</span>
+	                      <h3>Inspection evidence</h3>
+	                    </div>
+	                    <strong>{inspectionAttachments.length}</strong>
+	                  </div>
+	                  <div className="attachment-actions">
+	                    <button type="button" onClick={() => cameraInputRef.current?.click()}>
+	                      <Camera size={18} />
+	                      Camera
+	                    </button>
+	                    <button type="button" onClick={() => cameraRollInputRef.current?.click()}>
+	                      <FileSearch size={18} />
+	                      Camera roll
+	                    </button>
+	                    <button type="button" onClick={() => fileAttachmentInputRef.current?.click()}>
+	                      <Upload size={18} />
+	                      File
+	                    </button>
+	                    <input
+	                      ref={cameraInputRef}
+	                      type="file"
+	                      accept="image/*"
+	                      capture="environment"
+	                      onChange={(event) => handleInspectionAttachment(event, 'camera')}
+	                    />
+	                    <input
+	                      ref={cameraRollInputRef}
+	                      type="file"
+	                      accept="image/*"
+	                      onChange={(event) => handleInspectionAttachment(event, 'roll')}
+	                    />
+	                    <input
+	                      ref={fileAttachmentInputRef}
+	                      type="file"
+	                      accept="image/*,.pdf,.doc,.docx,.xlsx,.csv,.txt"
+	                      onChange={(event) => handleInspectionAttachment(event, 'file')}
+	                    />
+	                  </div>
+	                  {inspectionAttachments.length ? (
+	                    <div className="attachment-list">
+	                      {inspectionAttachments.map((attachment) => (
+	                        <article key={attachment.id}>
+	                          {attachment.previewUrl ? (
+	                            <img src={attachment.previewUrl} alt={attachment.name} />
+	                          ) : (
+	                            <span className="attachment-file-icon"><Paperclip size={18} /></span>
+	                          )}
+	                          <div>
+	                            <strong>{attachment.name}</strong>
+	                            <small>{attachment.sourceLabel} · {attachment.sizeLabel} · {attachment.capturedAt}</small>
+	                            <small>{attachment.aiReviewed ? 'AI Assist reviewed' : attachment.isImage ? 'Attached without AI review' : 'File attached'}</small>
+	                          </div>
+	                          {attachment.isImage && (
+	                            <button type="button" onClick={() => analyzeInspectionAttachment(attachment)}>
+	                              <Sparkles size={15} />
+	                              AI Assist
+	                            </button>
+	                          )}
+	                          <button type="button" onClick={() => removeInspectionAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`}>
+	                            <X size={16} />
+	                          </button>
+	                        </article>
+	                      ))}
+	                    </div>
+	                  ) : (
+	                    <p className="muted">Attach photos, files, or field evidence to this draft inspection. Photos can optionally be sent to Photo Aid for AI review.</p>
+	                  )}
+	                </section>
+	
+	                <section className="finalize-panel" id="finalize-inspection-section" aria-label="Finalize inspection">
+	                  <div>
+	                    <span className="premium-badge"><FileCheck2 size={15} /> Inspection closeout</span>
                     <h3>Finalize inspection</h3>
                     <p>
                       Collect final report details, capture operator and inspector signatures, save the inspection record, and generate the filled report PDF.
                     </p>
                   </div>
-                  <div className="finalize-summary">
-                    <span>{reportViolations.length} OUT</span>
-                    <span>{temperatureReadings.length} temps</span>
-                    <span>{finalizedRecord ? 'Finalized' : 'Draft'}</span>
-                  </div>
+	                  <div className="finalize-summary">
+	                    <span>{reportViolations.length} OUT</span>
+	                    <span>{temperatureReadings.length} temps</span>
+	                    <span>{inspectionAttachments.length} files</span>
+	                    <span>{finalizedRecord ? 'Finalized' : 'Draft'}</span>
+	                  </div>
                   <button
                     className="send-button finalize-button"
                     type="button"
@@ -3093,31 +3942,290 @@ function App() {
               </section>
             )}
 
+            {activeFeature === 'templates' && (
+              <section className="template-mapper">
+                <div className="config-hero">
+                  <div>
+                    <span className="premium-badge"><PenLine size={15} /> Report template mapper</span>
+                    <h2>Map official forms without editing code</h2>
+                    <p>Upload or select the blank jurisdiction form, click where data belongs, save the mapping profile, and reuse it every time that department finalizes an inspection.</p>
+                  </div>
+                  <div className="profile-stamp">
+                    <FileCheck2 size={22} />
+                    <span>{savedTemplateProfile ? `${savedTemplateProfile.fields} mapped fields saved` : 'Draft template map'}</span>
+                  </div>
+                </div>
+
+                <div className="template-toolbar">
+                  <label>
+                    <span>Page</span>
+                    <select value={templatePage} onChange={(event) => setTemplatePage(Number(event.target.value))}>
+                      <option value={1}>Page 1 checklist</option>
+                      <option value={2}>Page 2 addendum</option>
+                      <option value={3}>Page 3 continuation</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Field type</span>
+                    <select value={templateFieldType} onChange={(event) => setTemplateFieldType(event.target.value)}>
+                      {TEMPLATE_FIELD_TYPES.map((type) => (
+                        <option key={type.id} value={type.id}>{type.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Dot label</span>
+                    <input
+                      value={templateLabel}
+                      onChange={(event) => setTemplateLabel(event.target.value)}
+                      placeholder="Example: Facility address"
+                    />
+                  </label>
+                  <label>
+                    <span>Binds to</span>
+                    <input
+                      list="template-binding-suggestions"
+                      value={templateBinding}
+                      onChange={(event) => setTemplateBinding(event.target.value)}
+                      placeholder="Type a custom field path"
+                    />
+                  </label>
+                  <datalist id="template-binding-suggestions">
+                    {TEMPLATE_BINDINGS.map((binding) => (
+                      <option key={binding} value={binding} />
+                    ))}
+                  </datalist>
+                  <button type="button" onClick={addChecklistRowPattern}>
+                    <ListChecks size={16} />
+                    Add row pattern
+                  </button>
+                  <button className="send-button" type="button" onClick={saveTemplateProfile}>
+                    <Save size={16} />
+                    Save template
+                  </button>
+                </div>
+
+                <div className="template-workbench">
+                  <div className="template-canvas-panel">
+                    <div className="template-page-shell" onClick={placeTemplatePoint} role="button" tabIndex={0}>
+                      <img src={currentTemplateImage} alt={`Official Gwinnett form page ${templatePage}`} />
+                      {visibleTemplatePoints.map((point, index) => (
+                        <button
+                          key={point.id}
+                          className={`template-pin ${point.type} ${selectedTemplatePointId === point.id ? 'selected' : ''}`}
+                          type="button"
+                          style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedTemplatePointId(point.id);
+                          }}
+                          title={`${point.label ?? point.binding}: ${point.binding} (${point.x}, ${point.y})`}
+                        >
+                          {index + 1}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <aside className="template-side-panel">
+                    <div className="panel-title">
+                      <FileSearch size={18} />
+                      Mapping profile
+                    </div>
+                    <div className="template-summary">
+                      <div><strong>{templatePoints.length}</strong><span>mapped fields</span></div>
+                      <div><strong>{visibleTemplatePoints.length}</strong><span>on page {templatePage}</span></div>
+                      <div><strong>{savedTemplateProfile ? 'Saved' : 'Draft'}</strong><span>profile status</span></div>
+                    </div>
+                    {savedTemplateProfile && (
+                      <div className="template-saved">
+                        <CheckCircle2 size={18} />
+                        <span>{savedTemplateProfile.name} saved for {savedTemplateProfile.department}</span>
+                      </div>
+                    )}
+                    <div className="template-editor">
+                      <strong>{selectedTemplatePoint ? 'Edit selected field' : 'Select a mapped field'}</strong>
+                      {selectedTemplatePoint ? (
+                        <>
+                          <label>
+                            <span>Dot label</span>
+                            <input
+                              value={selectedTemplatePoint.label ?? selectedTemplatePoint.binding}
+                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { label: event.target.value })}
+                              placeholder="Human-readable field name"
+                            />
+                          </label>
+                          <label>
+                            <span>Binds to</span>
+                            <input
+                              list="template-binding-suggestions"
+                              value={selectedTemplatePoint.binding}
+                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { binding: event.target.value })}
+                              placeholder="Type any approved data field"
+                            />
+                          </label>
+                          <label>
+                            <span>Field type</span>
+                            <select
+                              value={selectedTemplatePoint.type}
+                              onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { type: event.target.value })}
+                            >
+                              {TEMPLATE_FIELD_TYPES.map((type) => (
+                                <option key={type.id} value={type.id}>{type.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="template-coordinate-row">
+                            <label>
+                              <span>X %</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={selectedTemplatePoint.x}
+                                onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { x: Number(event.target.value) })}
+                              />
+                            </label>
+                            <label>
+                              <span>Y %</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={selectedTemplatePoint.y}
+                                onChange={(event) => updateTemplatePoint(selectedTemplatePoint.id, { y: Number(event.target.value) })}
+                              />
+                            </label>
+                          </div>
+                          <div className="template-nudge-grid" aria-label="Nudge selected mapping">
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, 0, -0.25)}>Up</button>
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, -0.25, 0)}>Left</button>
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, 0.25, 0)}>Right</button>
+                            <button type="button" onClick={() => nudgeTemplatePoint(selectedTemplatePoint.id, 0, 0.25)}>Down</button>
+                          </div>
+                          <button className="template-delete" type="button" onClick={() => removeTemplatePoint(selectedTemplatePoint.id)}>
+                            <X size={15} />
+                            Remove selected
+                          </button>
+                        </>
+                      ) : (
+                        <p>Select a numbered bubble or a row below to edit its field type, binding, and position.</p>
+                      )}
+                    </div>
+                    <div className="template-point-list">
+                      {visibleTemplatePoints.length ? visibleTemplatePoints.map((point) => (
+                        <article
+                          className={selectedTemplatePointId === point.id ? 'selected' : ''}
+                          key={point.id}
+                          onClick={() => setSelectedTemplatePointId(point.id)}
+                        >
+                          <span className={`template-dot ${point.type}`} />
+                          <div>
+                            <strong>{point.label ?? point.binding}</strong>
+                            <small>{point.binding} · {point.type} · x {point.x}% · y {point.y}%</small>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removeTemplatePoint(point.id);
+                            }}
+                            aria-label="Remove mapped field"
+                          >
+                            <X size={15} />
+                          </button>
+                        </article>
+                      )) : (
+                        <p className="muted">Click the form preview to add the selected field mapping.</p>
+                      )}
+                    </div>
+                    <div className="template-note">
+                      <strong>Production shape</strong>
+                      <p>Store this mapping as a jurisdiction report template. Final report generation reads the saved coordinates instead of hardcoded form positions.</p>
+                    </div>
+                  </aside>
+                </div>
+              </section>
+            )}
+
             {activeFeature === 'photo' && (
               <article className="photo-panel feature-panel">
                 <div className="panel-title">
                   <Camera size={18} />
                   Photo analysis aid
                 </div>
+                <div className="photo-ai-strip">
+                  <span className="premium-badge">
+                    <Sparkles size={15} />
+                    {coreMode ? 'Core AI photo review' : 'Demo photo prompts'}
+                  </span>
+                  <p>Photo Aid suggests what to verify. Inspectors still confirm facts before citing.</p>
+                </div>
                 <label className="upload-target">
                   <Upload size={20} />
                   <input type="file" accept="image/*" onChange={handlePhoto} />
                   <span>{photoName || 'Attach inspection photo'}</span>
                 </label>
+                {photoPreviewUrl && (
+                  <div className="photo-preview">
+                    <img src={photoPreviewUrl} alt="Inspection upload preview" />
+                    <div>
+                      <strong>{photoName}</strong>
+                      <p>{photoSummary || 'Ready for AI-assisted review.'}</p>
+                      {photoFeedbackCount > 0 && <small>{photoFeedbackCount} finding feedback item{photoFeedbackCount === 1 ? '' : 's'} saved for admin review.</small>}
+                    </div>
+                  </div>
+                )}
                 <div className="photo-results">
                   {photoFindings.length ? (
-                    photoFindings.map((finding) => (
-                      <div key={finding.label}>
-                        <strong>{finding.label}</strong>
+                    photoFindings.map((finding, index) => {
+                      const feedbackKey = photoFindingFeedbackKey(finding, index);
+                      const feedback = photoFeedbackByFinding[feedbackKey] ?? {};
+                      const needsNote = feedback.decision === 'wrong' || feedback.decision === 'supervisor';
+                      return (
+                      <div key={`${finding.label}-${index}`}>
+                        <strong>
+                          {finding.label}
+                          {finding.confidence && <span>{finding.confidence} confidence</span>}
+                        </strong>
                         <p>{finding.risk}</p>
+                        {finding.verification && <p className="photo-verify">{finding.verification}</p>}
                         <button type="button" onClick={() => ask(finding.topic)}>
                           <Search size={15} />
                           Check approved rule
                         </button>
+                        <div className="photo-feedback" aria-label={`Feedback for ${finding.label}`}>
+                          <span>Inspector feedback</span>
+                          <div>
+                            {PHOTO_FEEDBACK_OPTIONS.map((option) => {
+                              const Icon = option.icon;
+                              return (
+                                <button
+                                  key={option.id}
+                                  className={feedback.decision === option.id ? 'active' : ''}
+                                  type="button"
+                                  onClick={() => updatePhotoFindingFeedback(index, finding, { decision: option.id })}
+                                >
+                                  <Icon size={14} />
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {needsNote && (
+                          <label className="photo-feedback-note">
+                            <span>Correction or supervisor note</span>
+                            <textarea
+                              value={feedback.note ?? ''}
+                              onChange={(event) => updatePhotoFindingFeedback(index, finding, { note: event.target.value })}
+                              placeholder="What should the AI have noticed, ignored, or escalated?"
+                            />
+                          </label>
+                        )}
                       </div>
-                    ))
+                      );
+                    })
                   ) : (
-                    <p className="muted">The MVP flags review prompts. A later model can analyze images against local approved code and require inspector confirmation.</p>
+                    <p className="muted">Attach an inspection photo to generate review prompts from approved Gwinnett/Georgia source context.</p>
                   )}
                 </div>
               </article>
@@ -3183,6 +4291,100 @@ function App() {
                       <div><strong>{activeDepartment.checklist}</strong><span>active inspection form</span></div>
                     </div>
                   </section>
+                </div>
+                <div className="photo-review-panel">
+                  <div className="registry-head">
+                    <div>
+                      <span className="premium-badge"><Sparkles size={15} /> Photo AI review queue</span>
+                      <h3>Supervisor-reviewed learning loop</h3>
+                      <p>Inspector feedback from Photo Aid is held for department review before it becomes training-quality guidance.</p>
+                    </div>
+                    <div className="photo-review-metrics">
+                      <div><strong>{photoReviewStats.pending}</strong><span>pending</span></div>
+                      <div><strong>{photoReviewStats.followup}</strong><span>follow-up</span></div>
+                      <div><strong>{photoReviewStats.training}</strong><span>training approved</span></div>
+                    </div>
+                  </div>
+                  <div className="photo-review-list">
+                    {photoFeedbackQueue.length ? (
+                      photoFeedbackQueue.map((entry) => {
+                        const feedbackOption = PHOTO_FEEDBACK_OPTIONS.find((option) => option.id === entry.decision);
+                        const FeedbackIcon = feedbackOption?.icon ?? CircleHelp;
+                        const reviewStatus = entry.reviewStatus ?? 'pending';
+                        return (
+                          <article className={`photo-review-row ${reviewStatus}`} key={entry.id}>
+                            <div className="photo-review-topline">
+                              <span className="pill"><FeedbackIcon size={13} /> {feedbackOption?.label ?? 'Unmarked'}</span>
+                              <span className="pill good">{PHOTO_REVIEW_STATUS[reviewStatus] ?? PHOTO_REVIEW_STATUS.pending}</span>
+	                            </div>
+	                            <div className="photo-review-body">
+	                              {entry.photoDataUrl ? (
+	                                <button className="photo-review-image" type="button" onClick={() => setPhotoReviewModalEntry(entry)}>
+	                                  <img src={entry.photoDataUrl} alt={`Review snapshot for ${entry.findingLabel}`} />
+	                                  <span><FileSearch size={14} /> View photo</span>
+	                                </button>
+	                              ) : (
+	                                <div className="photo-review-image empty">
+	                                  <Camera size={20} />
+	                                  <span>Photo not stored</span>
+	                                </div>
+	                              )}
+	                              <div>
+	                                <h4>{entry.findingLabel}</h4>
+	                                <p>{entry.findingRisk}</p>
+                                {entry.findingVerification && <blockquote>{entry.findingVerification}</blockquote>}
+                                {entry.note && <small>Inspector note: {entry.note}</small>}
+                              </div>
+                              <div className="photo-review-meta">
+                                <span>{entry.jurisdiction}</span>
+                                <span>{entry.photoName || 'Inspection photo'}</span>
+                                <span>{entry.createdAt ? new Date(entry.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Queued locally'}</span>
+                                {entry.confidence && <span>{entry.confidence} confidence</span>}
+                              </div>
+                            </div>
+                            <label className="photo-review-note">
+                              <span>Supervisor note</span>
+                              <textarea
+                                value={entry.supervisorNote ?? ''}
+                                onChange={(event) => updatePhotoReviewEntry(entry.id, { supervisorNote: event.target.value })}
+                                placeholder="Approve, correct, or explain what should happen before this improves the model."
+                              />
+                            </label>
+                            <div className="photo-review-actions">
+                              <button type="button" onClick={() => updatePhotoReviewEntry(entry.id, { reviewStatus: 'reviewed' })}>
+                                <BadgeCheck size={15} />
+                                Mark reviewed
+                              </button>
+                              <button type="button" onClick={() => updatePhotoReviewEntry(entry.id, { reviewStatus: 'training' })}>
+                                <CheckCircle2 size={15} />
+                                Approve for training
+                              </button>
+                              <button type="button" onClick={() => updatePhotoReviewEntry(entry.id, { reviewStatus: 'followup' })}>
+                                <AlertTriangle size={15} />
+                                Needs follow-up
+                              </button>
+                              <button type="button" onClick={() => removePhotoReviewEntry(entry.id)}>
+                                <X size={15} />
+                                Remove
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })
+                    ) : (
+                      <div className="photo-review-empty">
+                        <CircleHelp size={18} />
+                        <div>
+                          <strong>No photo feedback queued yet</strong>
+                          <p>Run a Photo Aid review, then mark each possible finding as confirmed, not visible, wrong, or needing supervisor review.</p>
+                        </div>
+                        <button type="button" onClick={() => setActiveFeature('photo')}>
+                          <Camera size={15} />
+                          Open Photo Aid
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="master-registry">
                   <div className="registry-head">
@@ -3358,11 +4560,46 @@ function App() {
                 </button>
               )}
             </div>
-          </section>
-        </div>
-      )}
-      {temperatureViolationPrompt && (
-        <div className="modal-backdrop" role="presentation">
+	          </section>
+	        </div>
+	      )}
+	      {pendingAttachmentPrompt && (
+	        <div className="modal-backdrop" role="presentation">
+	          <section className="violation-modal attachment-ai-modal" role="dialog" aria-modal="true" aria-labelledby="attachment-ai-title">
+	            <div className="modal-header">
+	              <div>
+	                <span className="premium-badge">
+	                  <Paperclip size={15} />
+	                  Photo attached
+	                </span>
+	                <h2 id="attachment-ai-title">Do you want AI Assist analyzing this photo?</h2>
+	                <p>{pendingAttachmentPrompt.name} is saved to this inspection file either way.</p>
+	              </div>
+	              <button className="icon-button" type="button" aria-label="Close photo AI prompt" onClick={dismissAttachmentAiPrompt}>
+	                <X size={20} />
+	              </button>
+	            </div>
+	            <div className="attachment-ai-preview">
+	              {pendingAttachmentPrompt.previewUrl && <img src={pendingAttachmentPrompt.previewUrl} alt={pendingAttachmentPrompt.name} />}
+	              <div>
+	                <strong>{pendingAttachmentPrompt.sourceLabel}</strong>
+	                <span>{pendingAttachmentPrompt.sizeLabel} · {pendingAttachmentPrompt.capturedAt}</span>
+	              </div>
+	            </div>
+	            <div className="modal-actions">
+	              <button className="ghost-button" type="button" onClick={dismissAttachmentAiPrompt}>
+	                Attach only
+	              </button>
+	              <button className="send-button modal-save" type="button" onClick={() => analyzeInspectionAttachment()}>
+	                <Sparkles size={18} />
+	                Run AI Assist
+	              </button>
+	            </div>
+	          </section>
+	        </div>
+	      )}
+	      {temperatureViolationPrompt && (
+	        <div className="modal-backdrop" role="presentation">
           <section className="violation-modal temperature-alert-modal" role="dialog" aria-modal="true" aria-labelledby="temperature-alert-title">
             <div className="modal-header">
               <div>
@@ -3497,10 +4734,11 @@ function App() {
                   />
                 </label>
                 <div className="finalize-readiness wide">
-                  <div><strong>{CHECKLIST_ITEMS.length - checklistCounts.blank}</strong><span>Checklist items marked</span></div>
-                  <div><strong>{reportViolations.length}</strong><span>OUT violations</span></div>
-                  <div><strong>{temperatureReadings.length}</strong><span>Temperature readings</span></div>
-                </div>
+	                  <div><strong>{CHECKLIST_ITEMS.length - checklistCounts.blank}</strong><span>Checklist items marked</span></div>
+	                  <div><strong>{reportViolations.length}</strong><span>OUT violations</span></div>
+	                  <div><strong>{temperatureReadings.length}</strong><span>Temperature readings</span></div>
+	                  <div><strong>{inspectionAttachments.length}</strong><span>Attachments saved</span></div>
+	                </div>
               </div>
             ) : (
               <div className="signature-stage">
@@ -3581,11 +4819,43 @@ function App() {
                 Print preview
               </button>
             </div>
-          </section>
-        </div>
-      )}
-    </main>
-  );
-}
+	          </section>
+	        </div>
+	      )}
+	      {photoReviewModalEntry && (
+	        <div className="modal-backdrop" role="presentation">
+	          <section className="photo-review-modal" role="dialog" aria-modal="true" aria-labelledby="photo-review-title">
+	            <div className="modal-header">
+	              <div>
+	                <span className="premium-badge">
+	                  <Camera size={15} />
+	                  Review photo
+	                </span>
+	                <h2 id="photo-review-title">{photoReviewModalEntry.findingLabel}</h2>
+	                <p>{photoReviewModalEntry.photoName || 'Inspection photo'} · {photoReviewModalEntry.jurisdiction}</p>
+	              </div>
+	              <button className="icon-button" type="button" aria-label="Close photo review" onClick={() => setPhotoReviewModalEntry(null)}>
+	                <X size={20} />
+	              </button>
+	            </div>
+	            {photoReviewModalEntry.photoDataUrl && (
+	              <img src={photoReviewModalEntry.photoDataUrl} alt={`Review photo for ${photoReviewModalEntry.findingLabel}`} />
+	            )}
+	            <div className="photo-review-modal-details">
+	              <p>{photoReviewModalEntry.findingRisk}</p>
+	              {photoReviewModalEntry.findingVerification && <blockquote>{photoReviewModalEntry.findingVerification}</blockquote>}
+	              {photoReviewModalEntry.note && <small>Inspector note: {photoReviewModalEntry.note}</small>}
+	            </div>
+	            <div className="modal-actions">
+	              <button className="ghost-button" type="button" onClick={() => setPhotoReviewModalEntry(null)}>
+	                Close
+	              </button>
+	            </div>
+	          </section>
+	        </div>
+	      )}
+	    </main>
+	  );
+	}
 
 createRoot(document.getElementById('root')).render(<App />);
