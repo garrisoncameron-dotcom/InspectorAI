@@ -1687,10 +1687,12 @@ function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [photoName, setPhotoName] = useState('');
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
+  const [photoReviewImageUrl, setPhotoReviewImageUrl] = useState('');
   const [photoSummary, setPhotoSummary] = useState('');
   const [photoFindings, setPhotoFindings] = useState([]);
   const [photoFeedbackByFinding, setPhotoFeedbackByFinding] = useState({});
   const [photoFeedbackQueue, setPhotoFeedbackQueue] = useState(() => loadPhotoFeedbackQueue());
+  const [photoReviewModalEntry, setPhotoReviewModalEntry] = useState(null);
   const [listening, setListening] = useState(false);
   const [activeFeature, setActiveFeature] = useState('ask');
   const [checklistStatuses, setChecklistStatuses] = useState({});
@@ -2050,6 +2052,35 @@ function App() {
     });
   }
 
+  function createPhotoReviewSnapshot(imageDataUrl) {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined') {
+        resolve(imageDataUrl);
+        return;
+      }
+
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const maxEdge = 720;
+          const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+          const width = Math.max(1, Math.round(image.width * scale));
+          const height = Math.max(1, Math.round(image.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.72));
+        } catch {
+          resolve(imageDataUrl);
+        }
+      };
+      image.onerror = () => resolve(imageDataUrl);
+      image.src = imageDataUrl;
+    });
+  }
+
   function photoFindingFeedbackKey(finding, index) {
     return `${photoName || 'photo'}::${index}::${finding.label || 'finding'}`;
   }
@@ -2059,11 +2090,20 @@ function App() {
     try {
       const existing = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
       const withoutCurrent = existing.filter((item) => item.id !== entry.id);
-      const nextQueue = [entry, ...withoutCurrent].slice(0, 100);
+      const nextQueue = [entry, ...withoutCurrent].slice(0, 40);
       window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify(nextQueue));
       setPhotoFeedbackQueue(nextQueue);
     } catch {
-      // Feedback is helpful, but losing local queue storage should not interrupt inspection work.
+      try {
+        const lightweightEntry = { ...entry, photoDataUrl: '' };
+        const existing = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
+        const withoutCurrent = existing.filter((item) => item.id !== entry.id);
+        const nextQueue = [lightweightEntry, ...withoutCurrent].slice(0, 40);
+        window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify(nextQueue));
+        setPhotoFeedbackQueue(nextQueue);
+      } catch {
+        // Feedback is helpful, but losing local queue storage should not interrupt inspection work.
+      }
     }
   }
 
@@ -2107,6 +2147,8 @@ function App() {
         findingRisk: finding.risk,
         findingVerification: finding.verification,
         confidence: finding.confidence,
+        photoDataUrl: photoReviewImageUrl,
+        photoSummary,
         createdAt: existingEntry.createdAt ?? new Date().toISOString(),
         reviewStatus: existingEntry.reviewStatus ?? 'pending',
         ...existingEntry,
@@ -2125,10 +2167,13 @@ function App() {
     setPhotoSummary('');
     setPhotoFindings([]);
     setPhotoFeedbackByFinding({});
+    setPhotoReviewImageUrl('');
 
     try {
       const imageDataUrl = await readFileAsDataUrl(file);
+      const reviewImageUrl = await createPhotoReviewSnapshot(imageDataUrl);
       setPhotoPreviewUrl(imageDataUrl);
+      setPhotoReviewImageUrl(reviewImageUrl);
 
       if (coreMode) {
         setCoreStatus({ state: 'loading', message: 'InspectorAI Core is reviewing the photo...' });
@@ -4068,11 +4113,22 @@ function App() {
                             <div className="photo-review-topline">
                               <span className="pill"><FeedbackIcon size={13} /> {feedbackOption?.label ?? 'Unmarked'}</span>
                               <span className="pill good">{PHOTO_REVIEW_STATUS[reviewStatus] ?? PHOTO_REVIEW_STATUS.pending}</span>
-                            </div>
-                            <div className="photo-review-body">
-                              <div>
-                                <h4>{entry.findingLabel}</h4>
-                                <p>{entry.findingRisk}</p>
+	                            </div>
+	                            <div className="photo-review-body">
+	                              {entry.photoDataUrl ? (
+	                                <button className="photo-review-image" type="button" onClick={() => setPhotoReviewModalEntry(entry)}>
+	                                  <img src={entry.photoDataUrl} alt={`Review snapshot for ${entry.findingLabel}`} />
+	                                  <span><FileSearch size={14} /> View photo</span>
+	                                </button>
+	                              ) : (
+	                                <div className="photo-review-image empty">
+	                                  <Camera size={20} />
+	                                  <span>Photo not stored</span>
+	                                </div>
+	                              )}
+	                              <div>
+	                                <h4>{entry.findingLabel}</h4>
+	                                <p>{entry.findingRisk}</p>
                                 {entry.findingVerification && <blockquote>{entry.findingVerification}</blockquote>}
                                 {entry.note && <small>Inspector note: {entry.note}</small>}
                               </div>
@@ -4524,11 +4580,43 @@ function App() {
                 Print preview
               </button>
             </div>
-          </section>
-        </div>
-      )}
-    </main>
-  );
-}
+	          </section>
+	        </div>
+	      )}
+	      {photoReviewModalEntry && (
+	        <div className="modal-backdrop" role="presentation">
+	          <section className="photo-review-modal" role="dialog" aria-modal="true" aria-labelledby="photo-review-title">
+	            <div className="modal-header">
+	              <div>
+	                <span className="premium-badge">
+	                  <Camera size={15} />
+	                  Review photo
+	                </span>
+	                <h2 id="photo-review-title">{photoReviewModalEntry.findingLabel}</h2>
+	                <p>{photoReviewModalEntry.photoName || 'Inspection photo'} · {photoReviewModalEntry.jurisdiction}</p>
+	              </div>
+	              <button className="icon-button" type="button" aria-label="Close photo review" onClick={() => setPhotoReviewModalEntry(null)}>
+	                <X size={20} />
+	              </button>
+	            </div>
+	            {photoReviewModalEntry.photoDataUrl && (
+	              <img src={photoReviewModalEntry.photoDataUrl} alt={`Review photo for ${photoReviewModalEntry.findingLabel}`} />
+	            )}
+	            <div className="photo-review-modal-details">
+	              <p>{photoReviewModalEntry.findingRisk}</p>
+	              {photoReviewModalEntry.findingVerification && <blockquote>{photoReviewModalEntry.findingVerification}</blockquote>}
+	              {photoReviewModalEntry.note && <small>Inspector note: {photoReviewModalEntry.note}</small>}
+	            </div>
+	            <div className="modal-actions">
+	              <button className="ghost-button" type="button" onClick={() => setPhotoReviewModalEntry(null)}>
+	                Close
+	              </button>
+	            </div>
+	          </section>
+	        </div>
+	      )}
+	    </main>
+	  );
+	}
 
 createRoot(document.getElementById('root')).render(<App />);
