@@ -2746,6 +2746,13 @@ textarea {
   line-height: 1.45;
 }
 
+.photo-preview small {
+  display: block;
+  margin-top: 8px;
+  color: var(--green);
+  font-weight: 800;
+}
+
 .photo-results > div {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2797,6 +2804,66 @@ textarea {
   border-radius: 8px;
   padding: 8px 10px;
   font-weight: 750;
+}
+
+.photo-feedback {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.photo-feedback > span,
+.photo-feedback-note span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.photo-feedback > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.photo-results .photo-feedback button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--muted);
+  padding: 7px 9px;
+}
+
+.photo-results .photo-feedback button.active {
+  border-color: #a8ccbf;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.photo-results .photo-feedback button:nth-child(3).active,
+.photo-results .photo-feedback button:nth-child(4).active {
+  border-color: #e7b3ac;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.photo-feedback-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.photo-feedback-note textarea {
+  min-height: 74px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+  font-size: 0.94rem;
+  line-height: 1.35;
 }
 
 .checklist,

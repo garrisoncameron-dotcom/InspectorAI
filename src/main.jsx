@@ -599,6 +599,14 @@ const PHOTO_SIGNALS = [
   }
 ];
 
+const PHOTO_FEEDBACK_QUEUE_KEY = 'inspectaid.photoFeedbackQueue';
+const PHOTO_FEEDBACK_OPTIONS = [
+  { id: 'confirmed', label: 'Confirmed', icon: CheckCircle2 },
+  { id: 'not-visible', label: 'Not visible', icon: CircleHelp },
+  { id: 'wrong', label: 'Wrong', icon: X },
+  { id: 'supervisor', label: 'Needs supervisor', icon: AlertTriangle }
+];
+
 const FEATURES = [
   { id: 'ask', label: 'Ask', icon: MessageSquareText },
   { id: 'inspection', label: 'AI Inspection', icon: Sparkles },
@@ -1664,6 +1672,7 @@ function App() {
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
   const [photoSummary, setPhotoSummary] = useState('');
   const [photoFindings, setPhotoFindings] = useState([]);
+  const [photoFeedbackByFinding, setPhotoFeedbackByFinding] = useState({});
   const [listening, setListening] = useState(false);
   const [activeFeature, setActiveFeature] = useState('ask');
   const [checklistStatuses, setChecklistStatuses] = useState({});
@@ -1769,6 +1778,7 @@ function App() {
   const coreJurisdictionId = jurisdictionIdForName(jurisdiction, activeDepartmentId);
   const coreCanRun = coreRuntimeAvailable(coreApiUrl);
   const coreMode = aiRuntimeMode === 'core' && coreCanRun;
+  const photoFeedbackCount = Object.values(photoFeedbackByFinding).filter((feedback) => feedback.decision).length;
   const demoActiveAssist = activeChecklistItem
     ? composeInspectionAssist(activeChecklistItem, checklistStatuses[activeChecklistItem.id], jurisdiction, activeDocIds)
     : null;
@@ -2011,12 +2021,49 @@ function App() {
     });
   }
 
+  function photoFindingFeedbackKey(finding, index) {
+    return `${photoName || 'photo'}::${index}::${finding.label || 'finding'}`;
+  }
+
+  function savePhotoFeedbackQueue(entry) {
+    if (typeof window === 'undefined') return;
+    try {
+      const existing = JSON.parse(window.localStorage.getItem(PHOTO_FEEDBACK_QUEUE_KEY) || '[]');
+      const withoutCurrent = existing.filter((item) => item.id !== entry.id);
+      window.localStorage.setItem(PHOTO_FEEDBACK_QUEUE_KEY, JSON.stringify([entry, ...withoutCurrent].slice(0, 100)));
+    } catch {
+      // Feedback is helpful, but losing local queue storage should not interrupt inspection work.
+    }
+  }
+
+  function updatePhotoFindingFeedback(index, finding, patch) {
+    const id = photoFindingFeedbackKey(finding, index);
+    setPhotoFeedbackByFinding((current) => {
+      const entry = {
+        id,
+        photoName,
+        jurisdiction,
+        findingLabel: finding.label,
+        findingTopic: finding.topic,
+        findingRisk: finding.risk,
+        findingVerification: finding.verification,
+        confidence: finding.confidence,
+        createdAt: new Date().toISOString(),
+        ...(current[id] ?? {}),
+        ...patch
+      };
+      savePhotoFeedbackQueue(entry);
+      return { ...current, [id]: entry };
+    });
+  }
+
   async function handlePhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     setPhotoName(file.name);
     setPhotoSummary('');
     setPhotoFindings([]);
+    setPhotoFeedbackByFinding({});
 
     try {
       const imageDataUrl = await readFileAsDataUrl(file);
@@ -3814,12 +3861,17 @@ function App() {
                     <div>
                       <strong>{photoName}</strong>
                       <p>{photoSummary || 'Ready for AI-assisted review.'}</p>
+                      {photoFeedbackCount > 0 && <small>{photoFeedbackCount} finding feedback item{photoFeedbackCount === 1 ? '' : 's'} saved for admin review.</small>}
                     </div>
                   </div>
                 )}
                 <div className="photo-results">
                   {photoFindings.length ? (
-                    photoFindings.map((finding, index) => (
+                    photoFindings.map((finding, index) => {
+                      const feedbackKey = photoFindingFeedbackKey(finding, index);
+                      const feedback = photoFeedbackByFinding[feedbackKey] ?? {};
+                      const needsNote = feedback.decision === 'wrong' || feedback.decision === 'supervisor';
+                      return (
                       <div key={`${finding.label}-${index}`}>
                         <strong>
                           {finding.label}
@@ -3831,8 +3883,38 @@ function App() {
                           <Search size={15} />
                           Check approved rule
                         </button>
+                        <div className="photo-feedback" aria-label={`Feedback for ${finding.label}`}>
+                          <span>Inspector feedback</span>
+                          <div>
+                            {PHOTO_FEEDBACK_OPTIONS.map((option) => {
+                              const Icon = option.icon;
+                              return (
+                                <button
+                                  key={option.id}
+                                  className={feedback.decision === option.id ? 'active' : ''}
+                                  type="button"
+                                  onClick={() => updatePhotoFindingFeedback(index, finding, { decision: option.id })}
+                                >
+                                  <Icon size={14} />
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {needsNote && (
+                          <label className="photo-feedback-note">
+                            <span>Correction or supervisor note</span>
+                            <textarea
+                              value={feedback.note ?? ''}
+                              onChange={(event) => updatePhotoFindingFeedback(index, finding, { note: event.target.value })}
+                              placeholder="What should the AI have noticed, ignored, or escalated?"
+                            />
+                          </label>
+                        )}
                       </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="muted">Attach an inspection photo to generate review prompts from approved Gwinnett/Georgia source context.</p>
                   )}
