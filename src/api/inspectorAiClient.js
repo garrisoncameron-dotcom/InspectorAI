@@ -83,7 +83,9 @@ async function postCore(baseUrl, path, body, token = '') {
   });
 
   if (!response.ok) {
-    throw new Error(`InspectorAI Core returned ${response.status}`);
+    const detail = await response.json().catch(() => ({}));
+    const message = detail.message || detail.error || `InspectorAI Core returned ${response.status}`;
+    throw new Error(`InspectorAI Core returned ${response.status}: ${message}`);
   }
 
   return response.json();
