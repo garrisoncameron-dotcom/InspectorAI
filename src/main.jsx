@@ -45,6 +45,7 @@ import {
   getStoredCoreSettings,
   inspectionAssistCore,
   jurisdictionIdForName,
+  photoAssistCore,
   saveCoreSettings
 } from './api/inspectorAiClient.js';
 import './styles.css';
@@ -1660,6 +1661,8 @@ function App() {
   const [showCoreControls] = useState(() => coreControlsEnabled());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [photoName, setPhotoName] = useState('');
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
+  const [photoSummary, setPhotoSummary] = useState('');
   const [photoFindings, setPhotoFindings] = useState([]);
   const [listening, setListening] = useState(false);
   const [activeFeature, setActiveFeature] = useState('ask');
@@ -1999,12 +2002,49 @@ function App() {
     recognition.start();
   }
 
-  function handlePhoto(event) {
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handlePhoto(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     setPhotoName(file.name);
-    const selected = PHOTO_SIGNALS.filter((_, index) => index < 3);
-    setPhotoFindings(selected);
+    setPhotoSummary('');
+    setPhotoFindings([]);
+
+    try {
+      const imageDataUrl = await readFileAsDataUrl(file);
+      setPhotoPreviewUrl(imageDataUrl);
+
+      if (coreMode) {
+        setCoreStatus({ state: 'loading', message: 'InspectorAI Core is reviewing the photo...' });
+        const review = await photoAssistCore({
+          baseUrl: coreApiUrl,
+          token: coreApiToken,
+          jurisdictionId: coreJurisdictionId,
+          imageDataUrl,
+          context: `Jurisdiction: ${jurisdiction}. Inspector uploaded ${file.name}. Return conservative photo review prompts.`
+        });
+        setPhotoSummary(review.summary);
+        setPhotoFindings(review.findings.length ? review.findings : PHOTO_SIGNALS.slice(0, 3));
+        setCoreStatus({ state: 'ready', message: 'InspectorAI Core photo review complete.' });
+        return;
+      }
+    } catch (error) {
+      setCoreStatus({
+        state: 'error',
+        message: `Photo Aid is using demo prompts. ${error.message}`
+      });
+    }
+
+    setPhotoSummary('Demo Photo Aid prompts are shown until Core photo review is available.');
+    setPhotoFindings(PHOTO_SIGNALS.filter((_, index) => index < 3));
   }
 
   function markChecklistItem(item, status) {
@@ -3756,17 +3796,37 @@ function App() {
                   <Camera size={18} />
                   Photo analysis aid
                 </div>
+                <div className="photo-ai-strip">
+                  <span className="premium-badge">
+                    <Sparkles size={15} />
+                    {coreMode ? 'Core AI photo review' : 'Demo photo prompts'}
+                  </span>
+                  <p>Photo Aid suggests what to verify. Inspectors still confirm facts before citing.</p>
+                </div>
                 <label className="upload-target">
                   <Upload size={20} />
                   <input type="file" accept="image/*" onChange={handlePhoto} />
                   <span>{photoName || 'Attach inspection photo'}</span>
                 </label>
+                {photoPreviewUrl && (
+                  <div className="photo-preview">
+                    <img src={photoPreviewUrl} alt="Inspection upload preview" />
+                    <div>
+                      <strong>{photoName}</strong>
+                      <p>{photoSummary || 'Ready for AI-assisted review.'}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="photo-results">
                   {photoFindings.length ? (
-                    photoFindings.map((finding) => (
-                      <div key={finding.label}>
-                        <strong>{finding.label}</strong>
+                    photoFindings.map((finding, index) => (
+                      <div key={`${finding.label}-${index}`}>
+                        <strong>
+                          {finding.label}
+                          {finding.confidence && <span>{finding.confidence} confidence</span>}
+                        </strong>
                         <p>{finding.risk}</p>
+                        {finding.verification && <p className="photo-verify">{finding.verification}</p>}
                         <button type="button" onClick={() => ask(finding.topic)}>
                           <Search size={15} />
                           Check approved rule
@@ -3774,7 +3834,7 @@ function App() {
                       </div>
                     ))
                   ) : (
-                    <p className="muted">The MVP flags review prompts. A later model can analyze images against local approved code and require inspector confirmation.</p>
+                    <p className="muted">Attach an inspection photo to generate review prompts from approved Gwinnett/Georgia source context.</p>
                   )}
                 </div>
               </article>
