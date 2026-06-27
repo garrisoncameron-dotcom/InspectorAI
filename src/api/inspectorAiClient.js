@@ -14,6 +14,33 @@ export function coreRuntimeAvailable(baseUrl) {
   return Boolean((baseUrl || '').trim()) && (coreControlsEnabled() || Boolean(CONFIGURED_CORE_API_URL));
 }
 
+function decodeJsonBase64Url(value) {
+  const padded = `${value}${'='.repeat((4 - (value.length % 4)) % 4)}`;
+  const decoded = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  return JSON.parse(decoded);
+}
+
+export function getCoreSessionInfo(token) {
+  if (!token) return { status: 'missing' };
+
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return { status: 'opaque' };
+    const decoded = decodeJsonBase64Url(payload);
+    if (!decoded.exp) return { status: 'opaque' };
+
+    const expiresAtMs = decoded.exp * 1000;
+    const secondsRemaining = Math.floor((expiresAtMs - Date.now()) / 1000);
+    return {
+      status: secondsRemaining <= 0 ? 'expired' : 'active',
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      secondsRemaining
+    };
+  } catch {
+    return { status: 'opaque' };
+  }
+}
+
 export function jurisdictionIdForName(jurisdictionName, fallback = 'gwinnett-ga') {
   const normalized = jurisdictionName.toLowerCase();
   if (normalized.includes('gwinnett')) return 'gwinnett-ga';
@@ -34,10 +61,12 @@ export function getStoredCoreSettings() {
     const storedBaseUrl = stored.baseUrl || DEFAULT_CORE_API_URL;
     const localDevUrlSaved = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(storedBaseUrl);
     const baseUrl = !isLocalHost && localDevUrlSaved ? DEFAULT_CORE_API_URL : storedBaseUrl;
+    const sessionInfo = getCoreSessionInfo(stored.token || '');
+    const token = sessionInfo.status === 'expired' ? '' : stored.token || '';
     return {
-      mode: stored.mode === 'core' && coreAllowed ? 'core' : 'demo',
+      mode: stored.mode === 'core' && coreAllowed && token ? 'core' : 'demo',
       baseUrl,
-      token: stored.token || ''
+      token
     };
   } catch {
     return { mode: 'demo', baseUrl: DEFAULT_CORE_API_URL, token: '' };
@@ -78,6 +107,16 @@ function displayStatus(status) {
 
 function friendlyCoreError(status, detail = {}) {
   const raw = detail.message || detail.error || '';
+  const authError = detail.authError || detail.error;
+  if (authError === 'session_expired') {
+    return 'Core session expired. Sign in with the pilot invite code again.';
+  }
+  if (authError === 'missing_session') {
+    return 'Core session is missing. Sign in with the pilot invite code again.';
+  }
+  if (authError === 'invalid_session' || authError === 'invalid_scope') {
+    return 'Core session is no longer valid. Clear the session and sign in again.';
+  }
   if (detail.error === 'invalid_invite_code') {
     return 'That is not the pilot invite code. Use the invite code from Render, not the OpenAI API key.';
   }
