@@ -492,6 +492,13 @@ h1 {
   gap: 5px;
 }
 
+.runtime-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .runtime-panel input {
   min-height: 36px;
   width: 100%;
@@ -508,6 +515,11 @@ h1 {
   color: var(--muted);
   font-size: 0.86rem;
   line-height: 1.35;
+}
+
+.danger-lite {
+  border-color: #e5b8b0;
+  color: #9a4338;
 }
 
 .spin {
